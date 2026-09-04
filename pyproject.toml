@@ -10,6 +10,7 @@ readme = "README.md"
 authors = [
     { name = "UWF CS Department", email = "xfang@uwf.edu" }
 ]
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0.0",

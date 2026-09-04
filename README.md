@@ -267,3 +267,11 @@ To build fresh wheel (`.whl`) and source distribution (`.tar.gz`) packages:
 uv build
 ```
 Build artifacts will be saved in `dist/`.
+
+---
+
+## License
+
+This software is licensed under the MIT License for use within the **University of West Florida (UWF)**. 
+
+Faculty, course coordinators, instructors, and staff are free to use, modify, adapt, and distribute this tool for academic assessment and accreditation reporting without any restriction or requirement. See [LICENSE](LICENSE) for details.
