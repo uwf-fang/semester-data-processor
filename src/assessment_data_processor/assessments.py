@@ -357,6 +357,71 @@ def extract_assessments(course_dir: str) -> str:
                 writer.writerow({k: r[k] for k in headers})
         print(f"Generated detailed student assessment results CSV: {results_csv_output_path}")
 
+    # Aggregated Summary CSV: assessment_summary.csv (Pivot Table-like summary without Fail columns)
+    summary_csv_output_path = os.path.join(course_dir, "assessment_summary.csv")
+    if report_assessment_results:
+        summary_headers = [
+            "Accreditation",
+            "Assessment Name",
+            "Assessed Assignment",
+            "Passing Criterion",
+            "Target Benchmark",
+            "Target Major",
+            "Section ID",
+            "Passed Count",
+            "Total Evaluated",
+            "Pass Rate (%)",
+            "Outcome Status"
+        ]
+        summary_export_rows = []
+        for res in report_assessment_results:
+            cfg = res["cfg"]
+            acc_type = cfg.get("accreditation_type", "ABET").upper()
+            ass_name = cfg.get("assessment_name", "ABET Outcome")
+            matched_col = res["matched_col"]
+            pass_criterion = f"{cfg.get('passing_operator', '>=')} {cfg.get('passing_threshold_percent', 70):g}%"
+            target_bm = f"{cfg.get('target_pass_rate_percent', 75):g}% Pass Rate"
+            target_major = ", ".join(target_majors_filter) if target_majors_filter else "All Majors"
+            target_rate = float(cfg.get("target_pass_rate_percent", 75.0))
+
+            for sr in res["sec_summary_rows"]:
+                s_pct_val = float(sr["pass_percent"].rstrip("%"))
+                s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
+                summary_export_rows.append({
+                    "Accreditation": acc_type,
+                    "Assessment Name": ass_name,
+                    "Assessed Assignment": matched_col,
+                    "Passing Criterion": pass_criterion,
+                    "Target Benchmark": target_bm,
+                    "Target Major": target_major,
+                    "Section ID": sr["section_id"],
+                    "Passed Count": sr["pass_count"],
+                    "Total Evaluated": sr["total_count"],
+                    "Pass Rate (%)": sr["pass_percent"],
+                    "Outcome Status": s_status
+                })
+
+            summary_export_rows.append({
+                "Accreditation": acc_type,
+                "Assessment Name": ass_name,
+                "Assessed Assignment": matched_col,
+                "Passing Criterion": pass_criterion,
+                "Target Benchmark": target_bm,
+                "Target Major": target_major,
+                "Section ID": "Total (All Sections)",
+                "Passed Count": res["tot_pass"],
+                "Total Evaluated": res["tot_eval"],
+                "Pass Rate (%)": f"{res['total_pct']}%",
+                "Outcome Status": res["overall_status"]
+            })
+
+        with open(summary_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=summary_headers)
+            writer.writeheader()
+            for r in summary_export_rows:
+                writer.writerow(r)
+        print(f"Generated aggregated assessment summary CSV: {summary_csv_output_path}")
+
     # Formatted assessment_report.md
     report_output_path = os.path.join(course_dir, "assessment_report.md")
     acc_types_set = sorted(list(set(cfg.get("accreditation_type", "ABET").upper() for cfg in assessments_config))) if assessments_config else ["ABET"]

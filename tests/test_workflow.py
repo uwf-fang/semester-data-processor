@@ -217,6 +217,17 @@ class TestSemesterWorkflow(unittest.TestCase):
         self.assertIn("Score Percentage (%)", csv_content)
         self.assertIn("Passing Criterion", csv_content)
 
+        summary_csv = os.path.join(self.test_dir, "assessment_summary.csv")
+        self.assertTrue(os.path.exists(summary_csv))
+        with open(summary_csv, "r", encoding="utf-8") as f:
+            summary_content = f.read()
+
+        self.assertIn("Passed Count", summary_content)
+        self.assertIn("Total Evaluated", summary_content)
+        self.assertIn("Pass Rate (%)", summary_content)
+        self.assertNotIn("Fail Count", summary_content)
+        self.assertNotIn("Failed Count", summary_content)
+
 
 if __name__ == "__main__":
     unittest.main()

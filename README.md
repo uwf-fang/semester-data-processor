@@ -163,6 +163,7 @@ cop4020-26spring/
 ├── combined_roster.csv                             # GENERATED: Merged multi-section roster
 ├── merged_gradebook.csv                            # GENERATED: Consolidated gradebook + roster attributes
 ├── assessment_results.csv                          # GENERATED: Detailed per-student assessment CSV (Pivot Table ready)
+├── assessment_summary.csv                          # GENERATED: Aggregated outcome summary CSV (Pass metrics only)
 └── assessment_report.md                            # GENERATED: Formatted Markdown report
 ```
 
@@ -187,7 +188,12 @@ cop4020-26spring/
    - Includes helper count columns (`Pass Count` = 1/0 and `Total Student Count` = 1) for instant **Excel / Google Sheets Pivot Tables**.
    - See the **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step instructions.
 
-4. **`assessment_report.md`**:
+4. **`assessment_summary.csv`**:
+   - Aggregated CSV table saving summary data similar to the Pivot Table output.
+   - Summarizes `Passed Count`, `Total Evaluated`, `Pass Rate (%)`, and `Outcome Status` (`MET` / `NOT MET`) per section and total across all sections.
+   - Excludes all `Fail` columns for clean, focused outcome reporting.
+
+5. **`assessment_report.md`**:
    - Professional Markdown assessment report containing:
      - Executive summary & total roster enrollment breakdown by major and section.
      - Outcome pass/fail ratios and percentages per section and total sum across all sections.
