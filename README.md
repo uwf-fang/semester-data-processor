@@ -25,31 +25,31 @@ Faculty and department coordinators can choose between two flexible reporting me
 
 ## Installation & Setup Options
 
-You can install and use `assessment-data-processor` using either standard **`pip`** or **`uv`**, depending on your team's workflow:
-
-### Option 1: Standard `pip` Installation (Compatible with all Python environments)
+First, clone the repository to your local environment:
 ```bash
-# Install directly from GitHub repository
-pip install git+https://github.com/uwf-fang/assessment-data-processor.git
+git clone https://github.com/uwf-fang/assessment-data-processor.git
+cd assessment-data-processor
+```
+
+You can then install and run `assessment-data-processor` locally using either standard **`pip`** or **`uv`**:
+
+### Option 1: Standard `pip` Local Installation
+```bash
+# Install locally in editable mode (recommended)
+pip install -e .
 
 # Or install from built Wheel (.whl) package
 pip install dist/assessment_data_processor-0.1.0-py3-none-any.whl
-
-# Or install locally in editable mode (for developers)
-pip install -e .
 ```
 
-### Option 2: Ultra-Fast Installation with `uv`
+### Option 2: Local Installation with `uv`
 ```bash
 # Install from local directory using uv
 uv pip install .
-
-# Or install directly from GitHub using uv
-uv pip install git+https://github.com/uwf-fang/assessment-data-processor.git
 ```
 
 ### Option 3: Instant Execution with `uv run` (Zero Setup Needed)
-If you use `uv`, you can execute the tool directly without manually running `pip install`:
+If you use `uv`, you can execute the tool directly from the local directory without running a manual install:
 ```bash
 uv run assessment-processor run-all cop4020-26spring
 ```
