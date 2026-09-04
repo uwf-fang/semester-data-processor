@@ -16,13 +16,38 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 | `Full Major` | Text | `Computer Science` | **Filter / Slicer** |
 | `Section ID` | Text | `16197`, `17089`, `18451` | **Row Header** |
 | `Assessed Score` | Number/Text | `100`, `95`, `60`, `N/A` | **Value (Max / Average)** |
-| `Pass/Fail Status` | Text | `Pass`, `Fail` | **Column Header** |
+| `Pass/Fail Status` | Text | `Pass`, `Fail` | **Column Header / Filter** |
 | `Pass Count` | Number | `1` (if Pass), `0` (if Fail) | **Value (Sum)** |
 | `Total Student Count` | Number | `1` (for every student) | **Value (Sum)** |
 
 ---
 
-## 2. Step-by-Step Instructions
+## 2. How to Filter and Show ONLY 'Pass' Status
+
+If you prefer a clean table showing only the **Pass** counts and **Pass Rate %** without displaying the `Fail` column:
+
+### Method 1: Filter the Column Header (Direct Column Filtering)
+- **In Excel**:
+  1. Click the filter dropdown arrow $\boldsymbol{\blacktriangledown}$ next to **`Column Labels`** (or `Pass/Fail Status`) at the top of the Pivot Table.
+  2. Uncheck **`Fail`** (leave only **`Pass`** checked).
+  3. Click **OK**. The `Fail` column will disappear, showing only `Pass`, `Total Enrolled`, and `Pass Rate %`.
+- **In Google Sheets**:
+  1. In the **Pivot Table Editor** side pane, scroll down to **Filters**.
+  2. Click **Add** $\rightarrow$ select **`Pass/Fail Status`**.
+  3. Click **Status** $\rightarrow$ uncheck **`Fail`** (leave **`Pass`** checked).
+
+### Method 2: Omit Columns Area Entirely (Cleanest Approach)
+If you don't place `Pass/Fail Status` in the **Columns** box at all, you can simply use the numeric helper fields in **Values**:
+- **Values**:
+  - `Sum of Pass Count` $\rightarrow$ Name: **Passed Count**
+  - `Sum of Total Student Count` $\rightarrow$ Name: **Total Students**
+  - `Calculated Field` (`='Pass Count' / 'Total Student Count'`) $\rightarrow$ Name: **Pass Rate %**
+
+This creates a clean report table without any extra `Fail` or `Pass` column headers!
+
+---
+
+## 3. Step-by-Step Pivot Table Instructions
 
 ### Microsoft Excel
 
@@ -37,7 +62,6 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 3. **Configure Pivot Table Fields**:
    - Drag **`Accreditation`** and **`Program`** into the **Filters** area (top-left).
    - Drag **`Assessment Name`** and **`Section ID`** into the **Rows** area.
-   - Drag **`Pass/Fail Status`** into the **Columns** area.
    - Drag **`Pass Count`** and **`Total Student Count`** into the **Values** area (summarized as **SUM**).
 
 4. **Add Pass Rate % (Calculated Field)**:
@@ -47,6 +71,9 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
    - **Formula**: `='Pass Count' / 'Total Student Count'`
    - Click **OK**.
    - Select the `Pass Rate %` column in the Pivot Table, right-click $\rightarrow$ **Number Format...** $\rightarrow$ **Percentage** (`0.0%`).
+
+5. **(Optional) Filter Program for CS Majors**:
+   - At the top of the sheet in the Filter area, click **Program** $\rightarrow$ select **`CS`**.
 
 ---
 
@@ -61,8 +88,9 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 
 3. **Configure Pivot Table Fields**:
    - **Rows**: Click **Add** $\rightarrow$ select `Assessment Name`, then click **Add** $\rightarrow$ select `Section ID`.
-   - **Columns**: Click **Add** $\rightarrow$ select `Pass/Fail Status`.
-   - **Values**: Click **Add** $\rightarrow$ select `Pass Count` (Summarize by: **SUM**). Add `Total Student Count` (Summarize by: **SUM**).
+   - **Values**: 
+     - Click **Add** $\rightarrow$ select `Pass Count` (Summarize by: **SUM**).
+     - Click **Add** $\rightarrow$ select `Total Student Count` (Summarize by: **SUM**).
    - **Filters**: Click **Add** $\rightarrow$ select `Program` (Filter by Status $\rightarrow$ select `CS`), then add `Accreditation` (select `ABET`).
 
 4. **Add Calculated Pass Rate % Field**:
@@ -72,25 +100,24 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 
 ---
 
-## 3. Recommended Pivot Table Report Layouts
+## 4. Recommended Pivot Table Report Layouts
 
-### Layout A: ABET / SACSCOC Section Breakdown Table
-Generates section pass/fail ratios and pass percentages for targeted majors:
+### Layout A: ABET / SACSCOC Section Summary (Pass Only)
+Shows Passed Count, Total CS Enrolled, and Pass Rate % per section:
 
-- **Filter**: `Program` = `CS`, `Accreditation` = `ABET`
+- **Filters**: `Program` = `CS`, `Accreditation` = `ABET`
 - **Rows**: `Assessment Name`, `Section ID`
-- **Columns**: `Pass/Fail Status` (`Pass`, `Fail`)
-- **Values**: `Sum of Pass Count`, `Sum of Total Student Count`, `Pass Rate %`
+- **Values**: `Sum of Pass Count` (Passed), `Sum of Total Student Count` (Total), `Pass Rate %`
 
 **Output Preview**:
 
 ```
-Assessment Name                   Section ID   Pass   Fail   Total Enrolled   Pass Rate %
-========================================================================================
-ABET LO.PI 1.1 - Language Concepts 16197        16     1      17               94.1%
-                                  17089         5     0       5              100.0%
-----------------------------------------------------------------------------------------
-Total ABET LO.PI 1.1                           21     1      22               95.5%
+Assessment Name                   Section ID   Passed Count   Total CS Students   Pass Rate %
+=============================================================================================
+ABET LO.PI 1.1 - Language Concepts 16197        16             17                  94.1%
+                                  17089         5              5                 100.0%
+---------------------------------------------------------------------------------------------
+Total ABET LO.PI 1.1                           21             22                  95.5%
 ```
 
 ---
@@ -100,19 +127,18 @@ Compares pass rates across different degree programs (`CS`, `SD`, `Cyber`, `CE`,
 
 - **Filter**: `Accreditation`, `Assessment Name`
 - **Rows**: `Program`
-- **Columns**: `Pass/Fail Status`
-- **Values**: `Sum of Total Student Count` (Displayed as **% of Row Total**)
+- **Values**: `Sum of Pass Count` (Passed), `Sum of Total Student Count` (Total), `Pass Rate %`
 
 **Output Preview**:
 
 ```
-Program   Pass (%)   Fail (%)   Total Students
-==============================================
-CS        95.5%      4.5%       22
-SD        100.0%     0.0%       3
-Cyber     100.0%     0.0%       2
-----------------------------------------------
-Total     96.3%      3.7%       27
+Program   Passed Count   Total Students   Pass Rate %
+=====================================================
+CS        21             22               95.5%
+SD        3              3                100.0%
+Cyber     2              2                100.0%
+-----------------------------------------------------
+Total     26             27               96.3%
 ```
 
 ---
