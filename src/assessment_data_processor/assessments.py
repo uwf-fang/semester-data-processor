@@ -292,7 +292,6 @@ def extract_assessments(course_dir: str) -> str:
                 "First Name": fn,
                 "Last Name": ln,
                 "Section ID": sec_num,
-                "Assessed Assignment": matched_col_display,
                 "Assessed Score": display_score,
                 "Points Possible": pts_possible_str,
                 "Score Percentage (%)": score_pct_str,
@@ -373,7 +372,7 @@ def extract_assessments(course_dir: str) -> str:
     # Detailed Per-Student assessment_results.csv
     results_csv_output_path = os.path.join(course_dir, "assessment_results.csv")
     if per_student_export_rows:
-        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Assessed Assignment"]
+        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major"]
         with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers)
             writer.writeheader()
@@ -735,7 +734,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     ws_results.views.sheetView[0].showGridLines = True
 
     if per_student_export_rows:
-        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Assessed Assignment"]
+        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major"]
         for col_idx, h in enumerate(res_headers, 1):
             cell = ws_results.cell(row=1, column=col_idx, value=h)
             cell.font = header_font
