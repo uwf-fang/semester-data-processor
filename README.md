@@ -9,6 +9,14 @@ It automates:
 
 ---
 
+## Pivot Table Reporting Guide
+
+For step-by-step instructions on creating interactive Pivot Tables in **Microsoft Excel** or **Google Sheets** from `assessment_results.csv`, see our dedicated guide:
+
+👉 **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)**
+
+---
+
 ## Installation & Setup Options
 
 You can install and use `assessment-data-processor` using either standard **`pip`** or **`uv`**, depending on your team's workflow:
@@ -177,6 +185,7 @@ cop4020-26spring/
 3. **`assessment_results.csv`**:
    - Detailed per-student dataset listing every student's Program, Name, Section ID, Assessed Assignment, Assessed Score, and Pass/Fail Status.
    - Includes helper count columns (`Pass Count` = 1/0 and `Total Student Count` = 1) for instant **Excel / Google Sheets Pivot Tables**.
+   - See the **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step instructions.
 
 4. **`assessment_report.md`**:
    - Professional Markdown assessment report containing:
