@@ -223,10 +223,9 @@ def extract_assessments(course_dir: str) -> str:
             if m:
                 code = m.group(1).strip()
 
-        if code and code not in raw_ass_name:
-            full_assessment_name = f"[{code}] {raw_ass_name}"
-        else:
-            full_assessment_name = raw_ass_name
+        # Clean leading code prefixes from raw_ass_name so Code and Assignment Name aren't redundant
+        clean_ass_name = re.sub(r'^\[?LO\.?PI\s*[\d\.]+\]?\s*[-:]?\s*', '', raw_ass_name, flags=re.IGNORECASE).strip()
+        full_assessment_name = clean_ass_name if clean_ass_name else target_query
 
         op = item_cfg.get("passing_operator", ">=")
         pass_threshold = float(item_cfg.get("passing_threshold_percent", 70.0))
@@ -576,6 +575,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     section_font = Font(name="Calibri", size=12, bold=True, color="1F4E79")
+    sub_font = Font(name="Calibri", size=11, bold=True, color="333333")
     regular_font = Font(name="Calibri", size=11)
 
     met_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
@@ -591,16 +591,16 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     )
 
     row_idx = 1
-    ws_summary.cell(row=row_idx, column=1, value=f"{plan.get('course_name', os.path.basename(course_dir))} Assessment Report").font = title_font
+    ws_summary.cell(row=row_idx, column=1, value=f"{plan.get('course_name', os.path.basename(course_dir))} — Assessment Executive Summary").font = title_font
     row_idx += 1
-    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: {', '.join(plan.get('target_majors', [])) or 'All Majors'}").font = regular_font
+    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: {', '.join(plan.get('target_majors', [])) or 'All Majors'} | Active Students: {active_count}").font = regular_font
     row_idx += 2
 
-    # Section 1: Assessment Plan Configuration Details
-    ws_summary.cell(row=row_idx, column=1, value="1. Assessment Plan Configuration Details").font = section_font
+    # Section 1: Assessment Plan Details
+    ws_summary.cell(row=row_idx, column=1, value="1. Assessment Plan Details").font = section_font
     row_idx += 1
 
-    plan_headers = ["Code", "Accreditation", "Assessment Name", "Passing Criterion", "Target Benchmark", "Notes"]
+    plan_headers = ["Code", "Accreditation", "Assessed Assignment", "Passing Criterion", "Target Benchmark", "Notes"]
     for col_idx, h in enumerate(plan_headers, 1):
         cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
         cell.font = header_font
@@ -612,12 +612,15 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     for item in assessments_config:
         code_val = item.get("code", item.get("lo_pi_code", ""))
         acc_val = item.get("accreditation_type", "ABET").upper()
-        name_val = item.get("assessment_name", item.get("assignment_name", ""))
+        raw_name = item.get("assessment_name") or item.get("assignment_name") or item.get("assignment_column", "")
+        clean_name = re.sub(r'^\[?LO\.?PI\s*[\d\.]+\]?\s*[-:]?\s*', '', raw_name, flags=re.IGNORECASE).strip()
+        ass_name_val = clean_name if clean_name else raw_name
+
         crit_val = f"{item.get('passing_operator', '>=')} {item.get('passing_threshold_percent', 70):g}%"
         bm_val = f"{item.get('target_pass_rate_percent', 75):g}% Pass Rate"
         notes_val = item.get("notes", "")
 
-        row_vals = [code_val, acc_val, name_val, crit_val, bm_val, notes_val]
+        row_vals = [code_val, acc_val, ass_name_val, crit_val, bm_val, notes_val]
         for col_idx, val in enumerate(row_vals, 1):
             cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
             cell.font = regular_font
@@ -628,11 +631,11 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
 
     row_idx += 2
 
-    # Section 2: Simplified Assessment Outcome Summary Table
-    ws_summary.cell(row=row_idx, column=1, value="2. Simplified Assessment Outcome Summary").font = section_font
+    # Section 2: Assessment Summary (Simplified Title & Non-Redundant Columns)
+    ws_summary.cell(row=row_idx, column=1, value="2. Assessment Summary").font = section_font
     row_idx += 1
 
-    sum_headers = ["Code", "Assessment Name", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status"]
+    sum_headers = ["Code", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status"]
     for col_idx, h in enumerate(sum_headers, 1):
         cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
         cell.font = header_font
@@ -643,7 +646,6 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     for res in report_assessment_results:
         cfg = res["cfg"]
         code_val = res.get("code", "")
-        ass_name = res.get("full_assessment_name", cfg.get("assessment_name", ""))
         matched_col = res.get("matched_col", "")
         tot_pass = res.get("tot_pass", 0)
         tot_eval = res.get("tot_eval", 0)
@@ -651,14 +653,14 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
         pct_str = f"{res.get('total_pct', 0.0)}%"
         status_str = res.get("overall_status", "MET")
 
-        row_vals = [code_val, ass_name, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str]
+        row_vals = [code_val, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str]
         for col_idx, val in enumerate(row_vals, 1):
             cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
             cell.font = regular_font
             cell.border = thin_border
-            if col_idx in [1, 4, 5, 6, 7]:
+            if col_idx in [1, 3, 4, 5, 6]:
                 cell.alignment = Alignment(horizontal="center")
-            if col_idx == 8:
+            if col_idx == 7:
                 cell.alignment = Alignment(horizontal="center")
                 if status_str == "MET":
                     cell.fill = met_fill
@@ -667,6 +669,57 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
                     cell.fill = not_met_fill
                     cell.font = not_met_font
         row_idx += 1
+
+    row_idx += 2
+
+    # Section 3: Vertical Outcome Breakdown Cards
+    ws_summary.cell(row=row_idx, column=1, value="3. Section Outcome Breakdown Cards").font = section_font
+    row_idx += 1
+
+    for res in report_assessment_results:
+        code_val = res.get("code", "")
+        matched_col = res.get("matched_col", "")
+
+        ws_summary.cell(row=row_idx, column=1, value=f"Outcome Card: {code_val} ({matched_col})").font = sub_font
+        row_idx += 1
+
+        card_headers = ["Section ID", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Status"]
+        for col_idx, h in enumerate(card_headers, 1):
+            cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        row_idx += 1
+
+        target_rate = float(res["cfg"].get("target_pass_rate_percent", 75.0))
+        for sr in res["sec_summary_rows"]:
+            s_pct_val = float(sr["pass_percent"].rstrip("%"))
+            s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
+            row_vals = [sr["section_id"], sr["pass_count"], sr["total_count"], sr["pass_ratio"], sr["pass_percent"], s_status]
+            for col_idx, val in enumerate(row_vals, 1):
+                cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
+                cell.font = regular_font
+                cell.border = thin_border
+                if col_idx in [1, 2, 3, 4, 5]:
+                    cell.alignment = Alignment(horizontal="center")
+                if col_idx == 6:
+                    cell.alignment = Alignment(horizontal="center")
+                    cell.fill = met_fill if s_status == "MET" else not_met_fill
+                    cell.font = met_font if s_status == "MET" else not_met_font
+            row_idx += 1
+
+        tot_vals = ["Total (All Sections)", res["tot_pass"], res["tot_eval"], res["total_ratio"], f"{res['total_pct']}%", res["overall_status"]]
+        for col_idx, val in enumerate(tot_vals, 1):
+            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = Font(name="Calibri", size=11, bold=True)
+            cell.border = thin_border
+            if col_idx in [1, 2, 3, 4, 5]:
+                cell.alignment = Alignment(horizontal="center")
+            if col_idx == 6:
+                cell.alignment = Alignment(horizontal="center")
+                cell.fill = met_fill if res["overall_status"] == "MET" else not_met_fill
+                cell.font = met_font if res["overall_status"] == "MET" else not_met_font
+        row_idx += 2
 
     # Auto-adjust column widths
     for col in ws_summary.columns:
