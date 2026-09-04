@@ -2,6 +2,8 @@
 
 This guide explains how to open `assessment_results.csv` in spreadsheet software (**Microsoft Excel** or **Google Sheets**) and create interactive Pivot Tables for ABET, SACSCOC, and departmental accreditation reporting.
 
+> 💡 **Quick Choice**: You can either directly use the generated multi-tab Excel workbook (**`assessment_report.xlsx`**) with pre-built summary cards out-of-the-box, OR use **`assessment_results.csv`** to build custom manual Pivot Tables as described below!
+
 ---
 
 ## 1. Overview of `assessment_results.csv` Data Fields

@@ -5,15 +5,21 @@
 It automates:
 1. **Roster Consolidation**: Merging multi-section section rosters, extracting 5-digit section CRNs, and normalizing student major abbreviations (`CS`, `SD`, `Cyber`, `CE`, `EE`).
 2. **Gradebook Merging**: Merging Canvas gradebook exports while preserving **100% of Canvas grade columns intact** and mapping roster attributes.
-3. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC learning outcomes and generating per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`) and formatted Markdown reports (`assessment_report.md`).
+3. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC learning outcomes and automatically generating direct formatted Excel workbooks (`assessment_report.xlsx`), summary CSVs (`assessment_summary.csv`), per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`), and Markdown reports (`assessment_report.md`).
 
 ---
 
-## Pivot Table Reporting Guide
+## Flexible Reporting Options: Direct Excel vs. Manual Pivot Table
 
-For step-by-step instructions on creating interactive Pivot Tables in **Microsoft Excel** or **Google Sheets** from `assessment_results.csv`, see our dedicated guide:
+Faculty and department coordinators can choose between two flexible reporting methods:
 
-👉 **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)**
+- **Method A: Direct Excel Report (`assessment_report.xlsx`) — Instant & Pre-Formatted**
+  Simply open `assessment_report.xlsx` generated automatically by the tool. It includes styled Executive Summary cards, outcome totals, and per-student tables ready for instant department review out-of-the-box.
+
+- **Method B: Custom Pivot Table from CSV (`assessment_results.csv`) — Manual Flexibility**
+  If you prefer custom spreadsheet analysis in **Microsoft Excel** or **Google Sheets**, open `assessment_results.csv` and create custom interactive Pivot Tables using the built-in numeric helper fields (`Pass Count` and `Total Student Count`).
+
+👉 **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step Pivot Table instructions.
 
 ---
 
