@@ -208,6 +208,15 @@ class TestSemesterWorkflow(unittest.TestCase):
         self.assertIn("ABET LO.PI 1.1 - Problem Analysis", content)
         self.assertIn("ABET LO.PI 1.2 - Design & Implementation", content)
 
+        results_csv = os.path.join(self.test_dir, "assessment_results.csv")
+        self.assertTrue(os.path.exists(results_csv))
+        with open(results_csv, "r", encoding="utf-8") as f:
+            csv_content = f.read()
+
+        self.assertIn("Points Possible", csv_content)
+        self.assertIn("Score Percentage (%)", csv_content)
+        self.assertIn("Passing Criterion", csv_content)
+
 
 if __name__ == "__main__":
     unittest.main()

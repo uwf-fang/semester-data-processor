@@ -251,11 +251,16 @@ def extract_assessments(course_dir: str) -> str:
                 is_pass = check_passing_condition(pct, op, pass_threshold)
                 pass_status = "Pass" if is_pass else "Fail"
                 display_score = f"{score_val:.2f}" if score_val % 1 != 0 else f"{int(score_val)}"
+                score_pct_str = f"{round(pct, 1)}%"
             else:
                 pct = 0.0
                 is_pass = False
                 pass_status = "Fail"
                 display_score = "N/A"
+                score_pct_str = "N/A"
+
+            pts_possible_str = f"{pts_possible:g}" if isinstance(pts_possible, (int, float)) and pts_possible is not None else "100"
+            pass_criterion_str = f"{op} {pass_threshold:g}%"
 
             row_dict = {
                 "Accreditation": accreditation_type,
@@ -267,6 +272,9 @@ def extract_assessments(course_dir: str) -> str:
                 "Section ID": sec_num,
                 "Assessed Assignment": matched_col_display,
                 "Assessed Score": display_score,
+                "Points Possible": pts_possible_str,
+                "Score Percentage (%)": score_pct_str,
+                "Passing Criterion": pass_criterion_str,
                 "Pass/Fail Status": pass_status,
                 "Pass Count": 1 if pass_status == "Pass" else 0,
                 "Total Student Count": 1
@@ -341,7 +349,7 @@ def extract_assessments(course_dir: str) -> str:
     # Detailed Per-Student assessment_results.csv
     results_csv_output_path = os.path.join(course_dir, "assessment_results.csv")
     if per_student_export_rows:
-        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Assessment Name", "Full Major", "Assessed Assignment"]
+        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Assessment Name", "Full Major", "Assessed Assignment"]
         with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers)
             writer.writeheader()

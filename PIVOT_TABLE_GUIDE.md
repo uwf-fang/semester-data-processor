@@ -16,6 +16,9 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 | `Full Major` | Text | `Computer Science` | **Filter / Slicer** |
 | `Section ID` | Text | `16197`, `17089`, `18451` | **Row Header** |
 | `Assessed Score` | Number/Text | `100`, `95`, `60`, `N/A` | **Value (Max / Average)** |
+| `Points Possible` | Number | `100` | **Value / Reference** |
+| `Score Percentage (%)` | Text/Number | `95.0%` | **Value / Reference** |
+| `Passing Criterion` | Text | `>= 70%` | **Filter / Reference** |
 | `Pass/Fail Status` | Text | `Pass`, `Fail` | **Column Header / Filter** |
 | `Pass Count` | Number | `1` (if Pass), `0` (if Fail) | **Value (Sum)** |
 | `Total Student Count` | Number | `1` (for every student) | **Value (Sum)** |
