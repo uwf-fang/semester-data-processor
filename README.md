@@ -87,8 +87,8 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
   "assessments": [
     {
       "accreditation_type": "ABET",
-      "assessment_name": "ABET LO.PI 1.1 - Language Concepts",
-      "assignment_column": "Project 1",
+      "code": "LO.PI 1.1",
+      "assessment_name": "Project 1",
       "passing_operator": ">=",
       "passing_threshold_percent": 70.0,
       "target_pass_rate_percent": 75.0,
@@ -96,8 +96,8 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
     },
     {
       "accreditation_type": "ABET",
-      "assessment_name": "ABET LO.PI 1.2 - Implementation & Testing",
-      "assignment_column": "Project 2",
+      "code": "LO.PI 1.2",
+      "assessment_name": "Project 2",
       "passing_operator": ">=",
       "passing_threshold_percent": 70.0,
       "target_pass_rate_percent": 75.0,
@@ -112,8 +112,8 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
 - `semester`: Term and year (e.g., `Spring 2026`).
 - `target_majors`: List of programs to evaluate (e.g. `["Computer Science"]`). Leave empty `[]` to evaluate all enrolled students.
 - `accreditation_type`: `ABET` or `SACSCOC`.
-- `assessment_name`: Name of the outcome or performance indicator (PI).
-- `assignment_column`: Assignment name in Canvas. Supports short names (`"Project 1"`) or exact column headers copied from Canvas (`"Project 1 (1270399)"`). Multi-stage fuzzy matching aligns headers automatically without third-party dependencies!
+- `code`: Learning outcome / performance indicator ID (e.g. `"LO.PI 1.1"`).
+- `assessment_name`: Name/title of the assessed assignment (e.g. `"Project 1"`). Merges assignment query and assessment name into a single clean attribute. Multi-stage fuzzy matching aligns headers automatically without third-party dependencies!
 - `passing_operator`: Operator for passing rule (`>=`, `>`, `<=`, `<`, `==`).
 - `passing_threshold_percent`: Minimum percentage score to pass (e.g. `70.0`).
 - `target_pass_rate_percent`: Department target pass rate benchmark (e.g. `75.0`).

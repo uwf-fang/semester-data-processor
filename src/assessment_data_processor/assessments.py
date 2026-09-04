@@ -91,8 +91,8 @@ def load_or_create_plan(course_dir: str) -> dict:
         "assessments": [
             {
                 "accreditation_type": "ABET",
-                "assessment_name": "ABET Outcome Assessment",
-                "assignment_column": "Project 1",
+                "code": "LO.PI 1.1",
+                "assessment_name": "Project 1",
                 "passing_operator": ">=",
                 "passing_threshold_percent": 70.0,
                 "target_pass_rate_percent": 75.0,
@@ -209,8 +209,25 @@ def extract_assessments(course_dir: str) -> str:
 
     for item_cfg in assessments_config:
         accreditation_type = item_cfg.get("accreditation_type", "ABET").upper()
-        assessment_name = item_cfg.get("assessment_name", "ABET Outcome")
-        target_query = item_cfg.get("assignment_column", "Project 1")
+        code = str(item_cfg.get("code", item_cfg.get("lo_pi_code", ""))).strip()
+
+        raw_ass_name = item_cfg.get("assessment_name") or item_cfg.get("assignment_name") or ""
+        raw_col_query = item_cfg.get("assignment_column") or raw_ass_name or "Project 1"
+        target_query = raw_col_query.strip()
+
+        if not raw_ass_name:
+            raw_ass_name = target_query
+
+        if not code:
+            m = re.search(r'(LO\.?PI\s*[\d\.]+)', raw_ass_name, re.IGNORECASE)
+            if m:
+                code = m.group(1).strip()
+
+        if code and code not in raw_ass_name:
+            full_assessment_name = f"[{code}] {raw_ass_name}"
+        else:
+            full_assessment_name = raw_ass_name
+
         op = item_cfg.get("passing_operator", ">=")
         pass_threshold = float(item_cfg.get("passing_threshold_percent", 70.0))
         target_rate = float(item_cfg.get("target_pass_rate_percent", 75.0))
@@ -269,7 +286,8 @@ def extract_assessments(course_dir: str) -> str:
 
             row_dict = {
                 "Accreditation": accreditation_type,
-                "Assessment Name": assessment_name,
+                "Code": code,
+                "Assessment Name": full_assessment_name,
                 "Program": prog_abbr,
                 "Full Major": prog_full,
                 "First Name": fn,
@@ -339,6 +357,8 @@ def extract_assessments(course_dir: str) -> str:
 
         report_assessment_results.append({
             "cfg": item_cfg,
+            "code": code,
+            "full_assessment_name": full_assessment_name,
             "matched_col": matched_col_display,
             "pts_possible": pts_possible,
             "per_student_rows": per_student_rows,
@@ -354,7 +374,7 @@ def extract_assessments(course_dir: str) -> str:
     # Detailed Per-Student assessment_results.csv
     results_csv_output_path = os.path.join(course_dir, "assessment_results.csv")
     if per_student_export_rows:
-        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Assessment Name", "Full Major", "Assessed Assignment"]
+        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Assessed Assignment"]
         with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers)
             writer.writeheader()
@@ -367,6 +387,7 @@ def extract_assessments(course_dir: str) -> str:
     if report_assessment_results:
         summary_headers = [
             "Accreditation",
+            "Code",
             "Assessment Name",
             "Assessed Assignment",
             "Passing Criterion",
@@ -382,7 +403,8 @@ def extract_assessments(course_dir: str) -> str:
         for res in report_assessment_results:
             cfg = res["cfg"]
             acc_type = cfg.get("accreditation_type", "ABET").upper()
-            ass_name = cfg.get("assessment_name", "ABET Outcome")
+            code = res.get("code", "")
+            ass_name = res.get("full_assessment_name", cfg.get("assessment_name", "ABET Outcome"))
             matched_col = res["matched_col"]
             pass_criterion = f"{cfg.get('passing_operator', '>=')} {cfg.get('passing_threshold_percent', 70):g}%"
             target_bm = f"{cfg.get('target_pass_rate_percent', 75):g}% Pass Rate"
@@ -394,6 +416,7 @@ def extract_assessments(course_dir: str) -> str:
                 s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
                 summary_export_rows.append({
                     "Accreditation": acc_type,
+                    "Code": code,
                     "Assessment Name": ass_name,
                     "Assessed Assignment": matched_col,
                     "Passing Criterion": pass_criterion,
@@ -408,6 +431,7 @@ def extract_assessments(course_dir: str) -> str:
 
             summary_export_rows.append({
                 "Accreditation": acc_type,
+                "Code": code,
                 "Assessment Name": ass_name,
                 "Assessed Assignment": matched_col,
                 "Passing Criterion": pass_criterion,
