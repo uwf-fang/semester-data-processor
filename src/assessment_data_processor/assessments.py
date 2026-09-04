@@ -188,10 +188,14 @@ def extract_assessments(course_dir: str) -> str:
                 raw_headers = [col.strip() for col in reader_raw[0]]
                 pts_row = reader_raw[2]
                 for h, p in zip(raw_headers, pts_row):
+                    clean_h = re.sub(r'\s*\(\d+\)$', '', h)
                     try:
-                        points_possible_map[h] = float(p.strip())
+                        pts_val = float(p.strip())
+                        points_possible_map[h] = pts_val
+                        points_possible_map[clean_h] = pts_val
                     except ValueError:
                         points_possible_map[h] = None
+                        points_possible_map[clean_h] = None
 
     total_enrolled = len(student_records)
     active_students = [s for s in student_records if s.get("Status", "").lower() == "active"]
@@ -217,8 +221,9 @@ def extract_assessments(course_dir: str) -> str:
             print(f"Warning: Assignment column '{target_query}' not found in gradebook.")
             continue
 
-        matched_col_display = ", ".join(matched_cols) if len(matched_cols) > 1 else matched_cols[0]
-        pts_possible = points_possible_map.get(matched_cols[0], 100.0)
+        clean_matched = [re.sub(r'\s*\(\d+\)$', '', c) for c in matched_cols]
+        matched_col_display = ", ".join(clean_matched) if len(clean_matched) > 1 else clean_matched[0]
+        pts_possible = points_possible_map.get(matched_cols[0], points_possible_map.get(clean_matched[0], 100.0))
 
         per_student_rows = []
         for s in active_students:

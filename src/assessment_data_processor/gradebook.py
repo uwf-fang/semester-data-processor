@@ -45,6 +45,8 @@ def process_gradebook(course_dir: str) -> str:
     if len(reader) < 2:
         raise ValueError("Gradebook CSV file must contain at least Header and Points Possible rows.")
 
+    import re
+
     raw_headers = [col.strip() for col in reader[0]]
 
     gb_headers = []
@@ -52,7 +54,7 @@ def process_gradebook(course_dir: str) -> str:
         if h == "Section":
             gb_headers.append("Canvas Section")
         else:
-            gb_headers.append(h)
+            gb_headers.append(re.sub(r'\s*\(\d+\)$', '', h))
 
     # Dynamically find Points Possible row index and student row start index
     pts_possible_idx = 1
