@@ -27,7 +27,7 @@ Faculty and department coordinators can choose between two flexible reporting me
 
 First, clone the repository to your local environment:
 ```bash
-git clone https://github.com/uwf-fang/assessment-data-processor.git
+git clone https://github.com/uwf-csd/assessment-data-processor.git
 cd assessment-data-processor
 ```
 
