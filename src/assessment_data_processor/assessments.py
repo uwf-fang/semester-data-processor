@@ -540,7 +540,176 @@ def extract_assessments(course_dir: str) -> str:
             f.write(format_markdown_table(std_headers, std_rows) + "\n\n")
 
     print(f"Generated assessment Markdown report: {report_output_path}")
+
+    # Direct Excel Workbook Generation: assessment_report.xlsx
+    excel_output_path = export_excel_report(
+        course_dir=course_dir,
+        plan=plan,
+        report_assessment_results=report_assessment_results,
+        per_student_export_rows=per_student_export_rows,
+        total_enrolled=total_enrolled,
+        active_count=len(active_students),
+        withdrawn_count=len(withdrawn_students)
+    )
+
     return report_output_path
+
+
+def export_excel_report(course_dir: str, plan: dict, report_assessment_results: list, per_student_export_rows: list, total_enrolled: int, active_count: int, withdrawn_count: int) -> str:
+    """Generates formatted Excel workbook (assessment_report.xlsx) with Plan details, simplified summary, and student results."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        print("Warning: 'openpyxl' module not found. Skipping .xlsx Excel report generation. Install via 'pip install openpyxl' or run with 'uv run'.")
+        return ""
+
+    wb = openpyxl.Workbook()
+
+    # Sheet 1: Assessment Summary & Plan
+    ws_summary = wb.active
+    ws_summary.title = "Assessment Summary & Plan"
+    ws_summary.views.sheetView[0].showGridLines = True
+
+    title_font = Font(name="Calibri", size=14, bold=True, color="1F4E79")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    section_font = Font(name="Calibri", size=12, bold=True, color="1F4E79")
+    regular_font = Font(name="Calibri", size=11)
+
+    met_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    met_font = Font(name="Calibri", size=11, bold=True, color="375623")
+    not_met_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+    not_met_font = Font(name="Calibri", size=11, bold=True, color="C65911")
+
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    row_idx = 1
+    ws_summary.cell(row=row_idx, column=1, value=f"{plan.get('course_name', os.path.basename(course_dir))} Assessment Report").font = title_font
+    row_idx += 1
+    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: {', '.join(plan.get('target_majors', [])) or 'All Majors'}").font = regular_font
+    row_idx += 2
+
+    # Section 1: Assessment Plan Configuration Details
+    ws_summary.cell(row=row_idx, column=1, value="1. Assessment Plan Configuration Details").font = section_font
+    row_idx += 1
+
+    plan_headers = ["Code", "Accreditation", "Assessment Name", "Passing Criterion", "Target Benchmark", "Notes"]
+    for col_idx, h in enumerate(plan_headers, 1):
+        cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    row_idx += 1
+
+    assessments_config = plan.get("assessments", [])
+    for item in assessments_config:
+        code_val = item.get("code", item.get("lo_pi_code", ""))
+        acc_val = item.get("accreditation_type", "ABET").upper()
+        name_val = item.get("assessment_name", item.get("assignment_name", ""))
+        crit_val = f"{item.get('passing_operator', '>=')} {item.get('passing_threshold_percent', 70):g}%"
+        bm_val = f"{item.get('target_pass_rate_percent', 75):g}% Pass Rate"
+        notes_val = item.get("notes", "")
+
+        row_vals = [code_val, acc_val, name_val, crit_val, bm_val, notes_val]
+        for col_idx, val in enumerate(row_vals, 1):
+            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = regular_font
+            cell.border = thin_border
+            if col_idx in [1, 2, 4, 5]:
+                cell.alignment = Alignment(horizontal="center")
+        row_idx += 1
+
+    row_idx += 2
+
+    # Section 2: Simplified Assessment Outcome Summary Table
+    ws_summary.cell(row=row_idx, column=1, value="2. Simplified Assessment Outcome Summary").font = section_font
+    row_idx += 1
+
+    sum_headers = ["Code", "Assessment Name", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status"]
+    for col_idx, h in enumerate(sum_headers, 1):
+        cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    row_idx += 1
+
+    for res in report_assessment_results:
+        cfg = res["cfg"]
+        code_val = res.get("code", "")
+        ass_name = res.get("full_assessment_name", cfg.get("assessment_name", ""))
+        matched_col = res.get("matched_col", "")
+        tot_pass = res.get("tot_pass", 0)
+        tot_eval = res.get("tot_eval", 0)
+        ratio_str = f"{tot_pass}/{tot_eval}"
+        pct_str = f"{res.get('total_pct', 0.0)}%"
+        status_str = res.get("overall_status", "MET")
+
+        row_vals = [code_val, ass_name, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str]
+        for col_idx, val in enumerate(row_vals, 1):
+            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = regular_font
+            cell.border = thin_border
+            if col_idx in [1, 4, 5, 6, 7]:
+                cell.alignment = Alignment(horizontal="center")
+            if col_idx == 8:
+                cell.alignment = Alignment(horizontal="center")
+                if status_str == "MET":
+                    cell.fill = met_fill
+                    cell.font = met_font
+                else:
+                    cell.fill = not_met_fill
+                    cell.font = not_met_font
+        row_idx += 1
+
+    # Auto-adjust column widths
+    for col in ws_summary.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or '')
+            max_len = max(max_len, len(val_str))
+        ws_summary.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    # Sheet 2: Student Assessment Results
+    ws_results = wb.create_sheet(title="Student Assessment Results")
+    ws_results.views.sheetView[0].showGridLines = True
+
+    if per_student_export_rows:
+        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Assessed Assignment"]
+        for col_idx, h in enumerate(res_headers, 1):
+            cell = ws_results.cell(row=1, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for r_idx, r in enumerate(per_student_export_rows, 2):
+            for c_idx, h in enumerate(res_headers, 1):
+                val = r.get(h, "")
+                cell = ws_results.cell(row=r_idx, column=c_idx, value=val)
+                cell.font = regular_font
+                cell.border = thin_border
+                if h in ["Program", "Section ID", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code"]:
+                    cell.alignment = Alignment(horizontal="center")
+
+        for col in ws_results.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                val_str = str(cell.value or '')
+                max_len = max(max_len, len(val_str))
+            ws_results.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    output_path = os.path.join(course_dir, "assessment_report.xlsx")
+    wb.save(output_path)
+    print(f"Generated Excel assessment report workbook: {output_path}")
+    return output_path
 
 
 if __name__ == "__main__":
