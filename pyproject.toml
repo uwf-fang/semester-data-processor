@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "assessment-data-processor"
+name = "semester-data-processor"
 version = "0.1.0"
-description = "Course assessment data processing tool for roster merging, gradebook processing, and ABET/SACSCOC assessment reporting."
+description = "Semester course data processing tool for roster merging, gradebook consolidation, dataset output README generation, and accreditation assessment reporting."
 readme = "README.md"
 authors = [
     { name = "UWF CS Department", email = "xfang@uwf.edu" }
@@ -19,11 +19,13 @@ dependencies = [
 ]
 
 [project.scripts]
-assessment-processor = "assessment_data_processor.cli:main"
-adp = "assessment_data_processor.cli:main"
+semester-processor = "semester_data_processor.cli:main"
+sdp = "semester_data_processor.cli:main"
+assessment-processor = "semester_data_processor.cli:main"
+adp = "semester_data_processor.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/assessment_data_processor"]
+packages = ["src/semester_data_processor"]
 
 [dependency-groups]
 dev = [

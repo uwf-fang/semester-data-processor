@@ -16,6 +16,7 @@ import difflib
 import statistics
 from collections import defaultdict, Counter
 from .gradebook import process_gradebook
+from .readme import generate_output_readme
 
 
 PROGRAM_ABBR_MAP = {
@@ -550,6 +551,8 @@ def extract_assessments(course_dir: str) -> str:
         withdrawn_count=len(withdrawn_students)
     )
 
+    generate_output_readme(course_dir, action_name="Extract Assessments")
+
     return report_output_path
 
 
@@ -766,7 +769,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 -m assessment_data_processor.assessments <course_dir>")
+        print("Usage: python3 -m semester_data_processor.assessments <course_dir>")
         sys.exit(1)
 
     extract_assessments(sys.argv[1])

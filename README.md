@@ -1,11 +1,12 @@
-# Assessment Data Processor (`assessment-data-processor`)
+# Semester Data Processor (`semester-data-processor`)
 
-`assessment-data-processor` is an automated Python package designed for university faculty, course coordinators, and academic departments to streamline course data management and accreditation reporting. 
+`semester-data-processor` is an automated Python package designed for university faculty, course coordinators, and academic departments to streamline course data management, output dataset documentation, and accreditation reporting. 
 
 It automates:
 1. **Roster Consolidation**: Merging multi-section section rosters, extracting 5-digit section CRNs, and normalizing student major abbreviations (`CS`, `SD`, `Cyber`, `CE`, `EE`).
 2. **Gradebook Merging**: Merging Canvas gradebook exports while preserving **100% of Canvas grade columns intact** and mapping roster attributes.
-3. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC learning outcomes and automatically generating direct formatted Excel workbooks (`assessment_report.xlsx`), summary CSVs (`assessment_summary.csv`), per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`), and Markdown reports (`assessment_report.md`).
+3. **Dataset Documentation & Processing Audit Log**: Automatically generating and maintaining dataset `README.md` documentation in each course directory with raw input file injection timestamps and pipeline run history.
+4. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC learning outcomes and automatically generating direct formatted Excel workbooks (`assessment_report.xlsx`), summary CSVs (`assessment_summary.csv`), per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`), and Markdown reports (`assessment_report.md`).
 
 ---
 
@@ -27,11 +28,11 @@ Faculty and department coordinators can choose between two flexible reporting me
 
 First, clone the repository to your local environment:
 ```bash
-git clone https://github.com/uwf-csd/assessment-data-processor.git
-cd assessment-data-processor
+git clone https://github.com/uwf-csd/semester-data-processor.git
+cd semester-data-processor
 ```
 
-You can then install and run `assessment-data-processor` locally using either standard **`pip`** or **`uv`**:
+You can then install and run `semester-data-processor` locally using either standard **`pip`** or **`uv`**:
 
 ### Option 1: Standard `pip` Local Installation
 ```bash
@@ -39,7 +40,7 @@ You can then install and run `assessment-data-processor` locally using either st
 pip install -e .
 
 # Or install from built Wheel (.whl) package
-pip install dist/assessment_data_processor-0.1.0-py3-none-any.whl
+pip install dist/semester_data_processor-0.1.0-py3-none-any.whl
 ```
 
 ### Option 2: Local Installation with `uv`
@@ -51,7 +52,7 @@ uv pip install .
 ### Option 3: Instant Execution with `uv run` (Zero Setup Needed)
 If you use `uv`, you can execute the tool directly from the local directory without running a manual install:
 ```bash
-uv run assessment-processor run-all cop4020-26spring
+uv run semester-processor run-all cop4020-26spring
 ```
 
 ---
@@ -126,16 +127,16 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
 
 ---
 
-### Step 4: Run the Assessment Processor Tool
+### Step 4: Run the Semester Processor Tool
 
 #### Method A: Run with Standard `pip` Installed Package
 ```bash
-assessment-processor run-all cop4020-26spring
+semester-processor run-all cop4020-26spring
 ```
 
 #### Method B: Run with `uv run` (Zero Installation Required)
 ```bash
-uv run assessment-processor run-all cop4020-26spring
+uv run semester-processor run-all cop4020-26spring
 ```
 
 ---
@@ -171,7 +172,8 @@ cop4020-26spring/
 ├── assessment_results.csv                          # GENERATED: Detailed per-student assessment CSV (Pivot Table ready)
 ├── assessment_summary.csv                          # GENERATED: Aggregated outcome summary CSV (Pass metrics only)
 ├── assessment_report.xlsx                          # GENERATED: Formatted multi-tab Excel workbook
-└── assessment_report.md                            # GENERATED: Formatted Markdown report
+├── assessment_report.md                            # GENERATED: Formatted Markdown report
+└── README.md                                       # GENERATED: Dataset overview & Processing Audit Log
 ```
 
 ---
@@ -211,6 +213,10 @@ cop4020-26spring/
      - Outcome pass/fail ratios and percentages per section and total sum across all sections.
      - Complete student outcome result tables.
 
+7. **`README.md`**:
+   - Dataset documentation detailing data products and output usage.
+   - Features a **Processing Log & Updates** audit trail section recording execution timestamps, raw file modification/injection times, and run statistics.
+
 ---
 
 ## Command Line Interface (CLI) Commands
@@ -218,12 +224,15 @@ cop4020-26spring/
 With `pip` (or `uv run`):
 ```bash
 # Run full pipeline
-assessment-processor run-all cop4020-26spring
+semester-processor run-all cop4020-26spring
 
 # Run individual pipeline steps separately
-assessment-processor process-rosters cop4020-26spring
-assessment-processor process-gradebook cop4020-26spring
-assessment-processor extract-assessments cop4020-26spring
+semester-processor process-rosters cop4020-26spring
+semester-processor process-gradebook cop4020-26spring
+semester-processor extract-assessments cop4020-26spring
+
+# Generate/update dataset output README & processing log
+semester-processor generate-readme cop4020-26spring
 ```
 
 ---
@@ -233,7 +242,7 @@ assessment-processor extract-assessments cop4020-26spring
 You can also import and execute the workflow inside Python scripts or Jupyter Notebooks:
 
 ```python
-from assessment_data_processor import process_rosters, process_gradebook, extract_assessments
+from semester_data_processor import process_rosters, process_gradebook, extract_assessments, generate_output_readme
 
 course_dir = "cop4020-26spring"
 
@@ -241,6 +250,7 @@ course_dir = "cop4020-26spring"
 process_rosters(course_dir)
 process_gradebook(course_dir)
 extract_assessments(course_dir)
+generate_output_readme(course_dir, action_name="Full Pipeline Run")
 ```
 
 ---

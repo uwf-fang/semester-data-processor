@@ -23,8 +23,8 @@ import unittest
 # Add src directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from assessment_data_processor import process_rosters, process_gradebook, extract_assessments
-from assessment_data_processor.assessments import find_matching_columns
+from semester_data_processor import process_rosters, process_gradebook, extract_assessments, generate_output_readme
+from semester_data_processor.assessments import find_matching_columns
 
 
 class TestSemesterWorkflow(unittest.TestCase):
@@ -227,6 +227,41 @@ class TestSemesterWorkflow(unittest.TestCase):
         self.assertIn("Pass Rate (%)", summary_content)
         self.assertNotIn("Fail Count", summary_content)
         self.assertNotIn("Failed Count", summary_content)
+
+    def test_output_readme_and_processing_log(self):
+        """Test dataset output README generation and ongoing processing log tracking."""
+        roster_csv = os.path.join(self.raw_dir, "CourseRoster_87575.csv")
+        with open(roster_csv, "w", encoding="utf-8") as f:
+            f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
+            f.write("970657342, Brent, Anderson, bma42@students.uwf.edu, Undergraduate, Computer Science\n")
+
+        # 1. Process rosters and check generated README
+        process_rosters(self.test_dir)
+        readme_path = os.path.join(self.test_dir, "README.md")
+        self.assertTrue(os.path.exists(readme_path))
+
+        with open(readme_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn("Dataset & Semester Processing Documentation", content)
+        self.assertIn("Processing Log & Updates", content)
+        self.assertIn("Process Rosters", content)
+        self.assertIn("CourseRoster_87575.csv", content)
+
+        # 2. Trigger additional stage and verify log section persistence
+        gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4534.csv")
+        with open(gb_csv, "w", encoding="utf-8") as f:
+            f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1200002)\n")
+            f.write("    Points Possible,,,,,100.00\n")
+            f.write('"Anderson, Brent",71556,970657342,bma42,87575_COP4534,100.00\n')
+
+        process_gradebook(self.test_dir)
+
+        with open(readme_path, "r", encoding="utf-8") as f:
+            updated_content = f.read()
+
+        self.assertIn("Process Gradebook", updated_content)
+        self.assertIn("Process Rosters", updated_content)
 
 
 if __name__ == "__main__":

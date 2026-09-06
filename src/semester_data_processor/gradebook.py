@@ -7,6 +7,7 @@ import os
 import glob
 import csv
 from .rosters import process_rosters
+from .readme import generate_output_readme
 
 
 def process_gradebook(course_dir: str) -> str:
@@ -160,12 +161,14 @@ def process_gradebook(course_dir: str) -> str:
     print(f"\nSuccessfully generated: {output_path}")
     print(f"Total Merged Student Records: {len(student_records)}")
 
+    generate_output_readme(course_dir, action_name="Process Gradebook")
+
     return output_path
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 -m semester_workflow.gradebook <course_dir>")
+        print("Usage: python3 -m semester_data_processor.gradebook <course_dir>")
         sys.exit(1)
 
     process_gradebook(sys.argv[1])

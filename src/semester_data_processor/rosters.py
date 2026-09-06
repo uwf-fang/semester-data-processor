@@ -7,6 +7,7 @@ import os
 import glob
 import re
 import csv
+from .readme import generate_output_readme
 
 
 def process_rosters(course_dir: str) -> str:
@@ -121,12 +122,14 @@ def process_rosters(course_dir: str) -> str:
         sec_withdrawn = sum(1 for s in sec_students if s.get("Status") == "Withdrawn")
         print(f"  - Section {sec}: {len(sec_students)} total ({sec_active} Active, {sec_withdrawn} Withdrawn)")
 
+    generate_output_readme(course_dir, action_name="Process Rosters")
+
     return output_path
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 -m semester_workflow.rosters <course_dir>")
+        print("Usage: python3 -m semester_data_processor.rosters <course_dir>")
         sys.exit(1)
 
     process_rosters(sys.argv[1])
