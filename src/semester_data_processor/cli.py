@@ -19,23 +19,23 @@ def main():
 
     # Command: process-rosters
     roster_parser = subparsers.add_parser("process-rosters", help="Merge section rosters in <course_dir>/raw/")
-    roster_parser.add_argument("course_dir", help="Path to course semester directory (e.g. cop4020-26spring)")
+    roster_parser.add_argument("course_dir", help="Path to course semester directory (e.g. copxxxx-26spring)")
 
     # Command: process-gradebook
     gb_parser = subparsers.add_parser("process-gradebook", help="Merge Canvas gradebook with combined roster")
-    gb_parser.add_argument("course_dir", help="Path to course semester directory (e.g. cop4020-26spring)")
+    gb_parser.add_argument("course_dir", help="Path to course semester directory (e.g. copxxxx-26spring)")
 
     # Command: extract-assessments
     ass_parser = subparsers.add_parser("extract-assessments", help="Extract ABET / SACSCOC assessment metrics & report")
-    ass_parser.add_argument("course_dir", help="Path to course semester directory (e.g. cop4020-26spring)")
+    ass_parser.add_argument("course_dir", help="Path to course semester directory (e.g. copxxxx-26spring)")
 
     # Command: generate-readme
     readme_parser = subparsers.add_parser("generate-readme", help="Generate/update dataset documentation and processing log README.md")
-    readme_parser.add_argument("course_dir", help="Path to course semester directory (e.g. cop4020-26spring)")
+    readme_parser.add_argument("course_dir", help="Path to course semester directory (e.g. copxxxx-26spring)")
 
     # Command: run-all
     all_parser = subparsers.add_parser("run-all", help="Execute complete pipeline (rosters -> gradebook -> assessments -> dataset README)")
-    all_parser.add_argument("course_dir", help="Path to course semester directory (e.g. cop4020-26spring)")
+    all_parser.add_argument("course_dir", help="Path to course semester directory (e.g. copxxxx-26spring)")
 
     args = parser.parse_args()
 

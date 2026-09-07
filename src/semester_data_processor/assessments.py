@@ -86,7 +86,7 @@ def load_or_create_plan(course_dir: str) -> dict:
             return json.load(f)
 
     default_plan = {
-        "course_name": "COP 4020 - Programming Languages",
+        "course_name": "COP XXXX - Sample Course",
         "semester": "Spring 2026",
         "target_majors": ["Computer Science"],
         "assessments": [

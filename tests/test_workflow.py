@@ -93,12 +93,12 @@ class TestSemesterWorkflow(unittest.TestCase):
             f.write("970673947, Nathan, Garrett, ngg7@students.uwf.edu, Undergraduate, Computer Science\n")
             f.write("970617074, Louis, Crabtree, ljc48@students.uwf.edu, Undergraduate, Computer Science\n")
 
-        gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4020.csv")
+        gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COPXXXX.csv")
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1270399)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Garrett, Nathan",81556,970673947,ngg7,18451_COP4020,100.00\n')
-            f.write('"Crabtree, Louis",81557,970617074,ljc48,18451_COP4020,90.00\n')
+            f.write('"Garrett, Nathan",81556,970673947,ngg7,18451_COPXXXX,100.00\n')
+            f.write('"Crabtree, Louis",81557,970617074,ljc48,18451_COPXXXX,90.00\n')
 
         process_rosters(self.test_dir)
         output_gb = process_gradebook(self.test_dir)

@@ -52,7 +52,7 @@ uv pip install .
 ### Option 3: Instant Execution with `uv run` (Zero Setup Needed)
 If you use `uv`, you can execute the tool directly from the local directory without running a manual install:
 ```bash
-uv run semester-processor run-all cop4020-26spring
+uv run semester-processor run-all copxxxx-26spring
 ```
 
 ---
@@ -62,33 +62,33 @@ uv run semester-processor run-all cop4020-26spring
 ### Step 1: Create a Dedicated Course Semester Directory
 Create a directory named after your course and semester in your workspace. 
 
-*Example Directory Name*: `cop4020-26spring` (COP 4020 Programming Languages - Spring 2026)
+*Example Directory Name*: `copxxxx-26spring` (COP XXXX Course Title - Spring 2026)
 
 ```bash
-mkdir cop4020-26spring
+mkdir copxxxx-26spring
 ```
 
 ---
 
 ### Step 2: Create a `raw/` Subdirectory & Copy Input Files
-Inside your course directory (`cop4020-26spring`), create a subdirectory named **`raw/`**. 
+Inside your course directory (`copxxxx-26spring`), create a subdirectory named **`raw/`**. 
 
-Copy all raw input files exported from Banner/MyUWF and Canvas into `cop4020-26spring/raw/`:
+Copy all raw input files exported from Banner/MyUWF and Canvas into `copxxxx-26spring/raw/`:
 - **Raw Roster CSVs**: Official university section rosters (e.g. `CourseRoster_202601_16197.csv`, `CourseRoster_202601_17089.csv`). The section CRN (`16197`, `17089`) is automatically extracted from the filename.
-- **Raw Canvas Gradebook CSV**: Gradebook export from Canvas (e.g. `2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv`).
+- **Raw Canvas Gradebook CSV**: Gradebook export from Canvas (e.g. `2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv`).
 
 > ⚠️ **Important Data Rule**: Never modify or rename raw input files inside `raw/`. The tool reads raw data pristine and generates processed output files directly in the root of the course directory.
 
 ---
 
 ### Step 3: Create the Assessment Plan (`assessment_plan.json`)
-Create a file named **`assessment_plan.json`** directly inside `cop4020-26spring/` (or place it in `cop4020-26spring/raw/`).
+Create a file named **`assessment_plan.json`** directly inside `copxxxx-26spring/` (or place it in `copxxxx-26spring/raw/`).
 
 This JSON file defines which assignment to assess, passing thresholds, target pass rates, and evaluated majors. It supports **single or multiple learning outcomes / performance indicators**:
 
 ```json
 {
-  "course_name": "COP 4020 - Programming Languages",
+  "course_name": "COP XXXX - Course Title",
   "semester": "Spring 2026",
   "target_majors": ["Computer Science"],
   "assessments": [
@@ -131,12 +131,12 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
 
 #### Method A: Run with Standard `pip` Installed Package
 ```bash
-semester-processor run-all cop4020-26spring
+semester-processor run-all copxxxx-26spring
 ```
 
 #### Method B: Run with `uv run` (Zero Installation Required)
 ```bash
-uv run semester-processor run-all cop4020-26spring
+uv run semester-processor run-all copxxxx-26spring
 ```
 
 ---
@@ -147,25 +147,25 @@ uv run semester-processor run-all cop4020-26spring
 Your course directory only contains raw input files inside `raw/` and your `assessment_plan.json`:
 
 ```
-cop4020-26spring/
+copxxxx-26spring/
 ├── raw/
 │   ├── CourseRoster_202601_16197.csv
 │   ├── CourseRoster_202601_17089.csv
-│   └── 2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv
+│   └── 2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv
 └── assessment_plan.json
 ```
 
 ---
 
 ### AFTER Running the Tool
-The tool reorganizes the course directory, preserving raw files intact while generating processed output files directly in the root of `cop4020-26spring/`:
+The tool reorganizes the course directory, preserving raw files intact while generating processed output files directly in the root of `copxxxx-26spring/`:
 
 ```
-cop4020-26spring/
+copxxxx-26spring/
 ├── raw/                                           # RAW DATA PRESERVED UNTOUCHED
 │   ├── CourseRoster_202601_16197.csv
 │   ├── CourseRoster_202601_17089.csv
-│   └── 2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv
+│   └── 2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv
 ├── assessment_plan.json                            # Accreditation configuration plan
 ├── combined_roster.csv                             # GENERATED: Merged multi-section roster
 ├── merged_gradebook.csv                            # GENERATED: Consolidated gradebook + roster attributes
@@ -224,15 +224,15 @@ cop4020-26spring/
 With `pip` (or `uv run`):
 ```bash
 # Run full pipeline
-semester-processor run-all cop4020-26spring
+semester-processor run-all copxxxx-26spring
 
 # Run individual pipeline steps separately
-semester-processor process-rosters cop4020-26spring
-semester-processor process-gradebook cop4020-26spring
-semester-processor extract-assessments cop4020-26spring
+semester-processor process-rosters copxxxx-26spring
+semester-processor process-gradebook copxxxx-26spring
+semester-processor extract-assessments copxxxx-26spring
 
 # Generate/update dataset output README & processing log
-semester-processor generate-readme cop4020-26spring
+semester-processor generate-readme copxxxx-26spring
 ```
 
 ---
@@ -244,7 +244,7 @@ You can also import and execute the workflow inside Python scripts or Jupyter No
 ```python
 from semester_data_processor import process_rosters, process_gradebook, extract_assessments, generate_output_readme
 
-course_dir = "cop4020-26spring"
+course_dir = "copxxxx-26spring"
 
 # Execute workflow steps programmatically
 process_rosters(course_dir)
