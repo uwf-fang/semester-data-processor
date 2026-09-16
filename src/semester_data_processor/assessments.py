@@ -8,14 +8,13 @@ Generates assessment_results.csv and assessment_report.md.
 
 import sys
 import os
-import glob
 import csv
 import json
 import re
 import difflib
-import statistics
-from collections import defaultdict, Counter
-from .gradebook import process_gradebook
+import math
+from collections import defaultdict
+from .gradebook import process_gradebook, discover_gradebooks, read_gradebooks
 from .readme import generate_output_readme
 
 
@@ -32,6 +31,18 @@ def get_program_abbr(program_name: str) -> str:
     """Returns concise program abbreviation (CS, SD, Cyber, CE, EE)."""
     p_clean = program_name.strip().lower()
     return PROGRAM_ABBR_MAP.get(p_clean, program_name.strip())
+
+
+def assessment_majors(plan: dict, item: dict) -> list:
+    """Item scope overrides the legacy plan default; [] explicitly means all."""
+    majors = item.get("target_majors", plan.get("target_majors", []))
+    if not isinstance(majors, list) or any(not isinstance(m, str) or not m.strip() for m in majors):
+        raise ValueError("target_majors must be a list of nonempty major names; use [] for all majors")
+    return [m.strip() for m in majors]
+
+
+def major_label(majors: list) -> str:
+    return ", ".join(majors) if majors else "All Majors"
 
 
 def format_markdown_table(headers, rows):
@@ -88,12 +99,12 @@ def load_or_create_plan(course_dir: str) -> dict:
     default_plan = {
         "course_name": "COP XXXX - Sample Course",
         "semester": "Spring 2026",
-        "target_majors": ["Computer Science"],
         "assessments": [
             {
                 "accreditation_type": "ABET",
                 "code": "LO.PI 1.1",
                 "assessment_name": "Project 1",
+                "target_majors": ["Computer Science"],
                 "passing_operator": ">=",
                 "passing_threshold_percent": 70.0,
                 "target_pass_rate_percent": 75.0,
@@ -120,6 +131,10 @@ def find_matching_columns(fieldnames: list, target_query: str) -> list:
     """
     target_clean = normalize_assignment_title(target_query)
     exclude_keywords = ["current score", "final score", "unposted", "current grade", "final grade"]
+
+    literal_matches = [f for f in fieldnames if normalize_assignment_title(f) == target_clean]
+    if literal_matches:
+        return literal_matches
 
     exact_matches = []
     for f in fieldnames:
@@ -164,14 +179,15 @@ def extract_assessments(course_dir: str) -> str:
     merged_gb_path = os.path.join(course_dir, "merged_gradebook.csv")
     raw_dir = os.path.join(course_dir, "raw")
 
-    if not os.path.exists(merged_gb_path):
-        print(f"Merged gradebook not found at {merged_gb_path}. Running process_gradebook first...")
+    if discover_gradebooks(raw_dir) or not os.path.exists(merged_gb_path):
+        print("Refreshing merged gradebook before assessment extraction...")
         process_gradebook(course_dir)
 
     plan = load_or_create_plan(course_dir)
     assessments_config = plan.get("assessments", [])
-    target_majors_filter = plan.get("target_majors", [])
-    target_majors_lower = [m.strip().lower() for m in target_majors_filter]
+    for item in assessments_config:
+        assessment_majors(plan, item)
+    plan_scope = "; ".join(dict.fromkeys(major_label(assessment_majors(plan, item)) for item in assessments_config)) or "No assessments"
 
     student_records = []
     with open(merged_gb_path, mode="r", encoding="utf-8-sig") as f:
@@ -180,35 +196,21 @@ def extract_assessments(course_dir: str) -> str:
         for row in reader:
             student_records.append(row)
 
-    gradebook_files = sorted(glob.glob(os.path.join(raw_dir, "*Grades*.csv"))) or sorted(glob.glob(os.path.join(raw_dir, "*[Gg]rade*.csv")))
     points_possible_map = {}
-    if gradebook_files:
-        with open(gradebook_files[0], mode="r", encoding="utf-8-sig") as f:
-            reader_raw = list(csv.reader(f))
-            if len(reader_raw) >= 3:
-                raw_headers = [col.strip() for col in reader_raw[0]]
-                pts_row = reader_raw[2]
-                for h, p in zip(raw_headers, pts_row):
-                    clean_h = re.sub(r'\s*\(\d+\)$', '', h)
-                    try:
-                        pts_val = float(p.strip())
-                        points_possible_map[h] = pts_val
-                        points_possible_map[clean_h] = pts_val
-                    except ValueError:
-                        points_possible_map[h] = None
-                        points_possible_map[clean_h] = None
+    if discover_gradebooks(raw_dir):
+        _, _, points_possible_map = read_gradebooks(raw_dir)
 
     total_enrolled = len(student_records)
-    active_students = [s for s in student_records if s.get("Status", "").lower() == "active"]
-    withdrawn_students = [s for s in student_records if s.get("Status", "").lower() == "withdrawn"]
-
-    if not active_students:
-        active_students = student_records
+    active_students = [s for s in student_records if s.get("Status", "Active").strip().lower() in ("", "active")]
+    withdrawn_students = [s for s in student_records if s.get("Status", "").strip().lower() == "withdrawn"]
 
     per_student_export_rows = []
     report_assessment_results = []
 
     for item_cfg in assessments_config:
+        target_majors = assessment_majors(plan, item_cfg)
+        target_majors_lower = [m.lower() for m in target_majors]
+        target_major = major_label(target_majors)
         accreditation_type = item_cfg.get("accreditation_type", "ABET").upper()
         code = str(item_cfg.get("code", item_cfg.get("lo_pi_code", ""))).strip()
 
@@ -235,12 +237,11 @@ def extract_assessments(course_dir: str) -> str:
 
         matched_cols = find_matching_columns(fieldnames, target_query)
         if not matched_cols:
-            print(f"Warning: Assignment column '{target_query}' not found in gradebook.")
-            continue
+            raise ValueError(f"Assignment column {target_query!r} not found in gradebook")
 
         clean_matched = [re.sub(r'\s*\(\d+\)$', '', c) for c in matched_cols]
         matched_col_display = ", ".join(clean_matched) if len(clean_matched) > 1 else clean_matched[0]
-        pts_possible = points_possible_map.get(matched_cols[0], points_possible_map.get(clean_matched[0], 100.0))
+        pts_possible = None
 
         per_student_rows = []
         for s in active_students:
@@ -258,15 +259,27 @@ def extract_assessments(course_dir: str) -> str:
             prog_abbr = get_program_abbr(prog_full)
             sec_num = s.get("Section Number", s.get("Section", "Unknown"))
 
+            included = not target_majors_lower or prog_full.strip().lower() in target_majors_lower or prog_abbr.lower() in target_majors_lower
             score_val = None
+            pts_possible = None
             for col_candidate in matched_cols:
-                val_str = s.get(col_candidate, "").strip()
-                if val_str != "" and val_str.lower() != "n/a":
-                    try:
-                        score_val = float(val_str)
-                        break
-                    except ValueError:
-                        pass
+                maximum = points_possible_map.get((s.get("SIS User ID", ""), col_candidate))
+                if pts_possible is None:
+                    pts_possible = maximum
+                try:
+                    candidate_score = float(s.get(col_candidate, "").strip())
+                except ValueError:
+                    continue
+                if not math.isfinite(candidate_score):
+                    raise ValueError(f"Non-finite score in {col_candidate!r}")
+                if maximum is None or maximum <= 0:
+                    raise ValueError(f"Missing or invalid Points Possible for {col_candidate!r}, "
+                                     f"SIS ID {s.get('SIS User ID', '')}")
+                if score_val is not None:
+                    raise ValueError(f"Multiple scored columns match {target_query!r} for "
+                                     f"SIS ID {s.get('SIS User ID', '')}; use an exact assignment_column")
+                score_val = candidate_score
+                pts_possible = maximum
 
             if score_val is not None and pts_possible and pts_possible > 0:
                 pct = (score_val / pts_possible) * 100.0
@@ -281,10 +294,12 @@ def extract_assessments(course_dir: str) -> str:
                 display_score = "N/A"
                 score_pct_str = "N/A"
 
-            pts_possible_str = f"{pts_possible:g}" if isinstance(pts_possible, (int, float)) and pts_possible is not None else "100"
+            pts_possible_str = f"{pts_possible:g}" if isinstance(pts_possible, (int, float)) and pts_possible is not None else "N/A"
             pass_criterion_str = f"{op} {pass_threshold:g}%"
 
             row_dict = {
+                "Target Major": target_major,
+                "Included in Assessment": "Yes" if included else "No",
                 "Accreditation": accreditation_type,
                 "Code": code,
                 "Assessment Name": full_assessment_name,
@@ -298,8 +313,8 @@ def extract_assessments(course_dir: str) -> str:
                 "Score Percentage (%)": score_pct_str,
                 "Passing Criterion": pass_criterion_str,
                 "Pass/Fail Status": pass_status,
-                "Pass Count": 1 if pass_status == "Pass" else 0,
-                "Total Student Count": 1
+                "Pass Count": 1 if included and pass_status == "Pass" else 0,
+                "Total Student Count": 1 if included else 0
             }
             per_student_rows.append({
                 **row_dict,
@@ -352,10 +367,11 @@ def extract_assessments(course_dir: str) -> str:
 
         total_ratio = f"{tot_pass}/{tot_eval}"
         total_pct = (tot_pass / tot_eval * 100.0) if tot_eval > 0 else 0.0
-        overall_status = "MET" if total_pct >= target_rate else "NOT MET"
+        overall_status = ("MET" if total_pct >= target_rate else "NOT MET") if tot_eval else "NO DATA"
 
         report_assessment_results.append({
             "cfg": item_cfg,
+            "target_major": target_major,
             "code": code,
             "full_assessment_name": full_assessment_name,
             "matched_col": matched_col_display,
@@ -372,62 +388,45 @@ def extract_assessments(course_dir: str) -> str:
 
     # Detailed Per-Student assessment_results.csv
     results_csv_output_path = os.path.join(course_dir, "assessment_results.csv")
-    if per_student_export_rows:
-        headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major"]
-        with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
-            writer.writeheader()
-            for r in per_student_export_rows:
-                writer.writerow({k: r[k] for k in headers})
-        print(f"Generated detailed student assessment results CSV: {results_csv_output_path}")
+    headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Target Major", "Included in Assessment"]
+    with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for r in per_student_export_rows:
+            writer.writerow({k: r[k] for k in headers})
+    print(f"Generated detailed student assessment results CSV: {results_csv_output_path}")
 
     # Aggregated Summary CSV: assessment_summary.csv (Pivot Table-like summary without Fail columns)
     summary_csv_output_path = os.path.join(course_dir, "assessment_summary.csv")
-    if report_assessment_results:
-        summary_headers = [
-            "Accreditation",
-            "Code",
-            "Assessment Name",
-            "Assessed Assignment",
-            "Passing Criterion",
-            "Target Benchmark",
-            "Target Major",
-            "Section ID",
-            "Passed Count",
-            "Total Evaluated",
-            "Pass Rate (%)",
-            "Outcome Status"
-        ]
-        summary_export_rows = []
-        for res in report_assessment_results:
-            cfg = res["cfg"]
-            acc_type = cfg.get("accreditation_type", "ABET").upper()
-            code = res.get("code", "")
-            ass_name = res.get("full_assessment_name", cfg.get("assessment_name", "ABET Outcome"))
-            matched_col = res["matched_col"]
-            pass_criterion = f"{cfg.get('passing_operator', '>=')} {cfg.get('passing_threshold_percent', 70):g}%"
-            target_bm = f"{cfg.get('target_pass_rate_percent', 75):g}% Pass Rate"
-            target_major = ", ".join(target_majors_filter) if target_majors_filter else "All Majors"
-            target_rate = float(cfg.get("target_pass_rate_percent", 75.0))
+    summary_headers = [
+        "Accreditation",
+        "Code",
+        "Assessment Name",
+        "Assessed Assignment",
+        "Passing Criterion",
+        "Target Benchmark",
+        "Target Major",
+        "Section ID",
+        "Passed Count",
+        "Total Evaluated",
+        "Pass Rate (%)",
+        "Outcome Status"
+    ]
+    summary_export_rows = []
+    for res in report_assessment_results:
+        cfg = res["cfg"]
+        acc_type = cfg.get("accreditation_type", "ABET").upper()
+        code = res.get("code", "")
+        ass_name = res.get("full_assessment_name", cfg.get("assessment_name", "ABET Outcome"))
+        matched_col = res["matched_col"]
+        pass_criterion = f"{cfg.get('passing_operator', '>=')} {cfg.get('passing_threshold_percent', 70):g}%"
+        target_bm = f"{cfg.get('target_pass_rate_percent', 75):g}% Pass Rate"
+        target_major = res["target_major"]
+        target_rate = float(cfg.get("target_pass_rate_percent", 75.0))
 
-            for sr in res["sec_summary_rows"]:
-                s_pct_val = float(sr["pass_percent"].rstrip("%"))
-                s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
-                summary_export_rows.append({
-                    "Accreditation": acc_type,
-                    "Code": code,
-                    "Assessment Name": ass_name,
-                    "Assessed Assignment": matched_col,
-                    "Passing Criterion": pass_criterion,
-                    "Target Benchmark": target_bm,
-                    "Target Major": target_major,
-                    "Section ID": sr["section_id"],
-                    "Passed Count": sr["pass_count"],
-                    "Total Evaluated": sr["total_count"],
-                    "Pass Rate (%)": sr["pass_percent"],
-                    "Outcome Status": s_status
-                })
-
+        for sr in res["sec_summary_rows"]:
+            s_pct_val = sr["pass_count"] / sr["total_count"] * 100.0
+            s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
             summary_export_rows.append({
                 "Accreditation": acc_type,
                 "Code": code,
@@ -436,19 +435,34 @@ def extract_assessments(course_dir: str) -> str:
                 "Passing Criterion": pass_criterion,
                 "Target Benchmark": target_bm,
                 "Target Major": target_major,
-                "Section ID": "Total (All Sections)",
-                "Passed Count": res["tot_pass"],
-                "Total Evaluated": res["tot_eval"],
-                "Pass Rate (%)": f"{res['total_pct']}%",
-                "Outcome Status": res["overall_status"]
+                "Section ID": sr["section_id"],
+                "Passed Count": sr["pass_count"],
+                "Total Evaluated": sr["total_count"],
+                "Pass Rate (%)": sr["pass_percent"],
+                "Outcome Status": s_status
             })
 
-        with open(summary_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=summary_headers)
-            writer.writeheader()
-            for r in summary_export_rows:
-                writer.writerow(r)
-        print(f"Generated aggregated assessment summary CSV: {summary_csv_output_path}")
+        summary_export_rows.append({
+            "Accreditation": acc_type,
+            "Code": code,
+            "Assessment Name": ass_name,
+            "Assessed Assignment": matched_col,
+            "Passing Criterion": pass_criterion,
+            "Target Benchmark": target_bm,
+            "Target Major": target_major,
+            "Section ID": "Total (All Sections)",
+            "Passed Count": res["tot_pass"],
+            "Total Evaluated": res["tot_eval"],
+            "Pass Rate (%)": f"{res['total_pct']}%",
+            "Outcome Status": res["overall_status"]
+        })
+
+    with open(summary_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_headers)
+        writer.writeheader()
+        for r in summary_export_rows:
+            writer.writerow(r)
+    print(f"Generated aggregated assessment summary CSV: {summary_csv_output_path}")
 
     # Formatted assessment_report.md
     report_output_path = os.path.join(course_dir, "assessment_report.md")
@@ -461,7 +475,7 @@ def extract_assessments(course_dir: str) -> str:
         f.write(f"- **Course**: {plan.get('course_name', course_dir)}\n")
         f.write(f"- **Semester**: {plan.get('semester', '')}\n")
         f.write(f"- **Total Roster Registrations**: {total_enrolled} ({len(active_students)} Active, {len(withdrawn_students)} Withdrawn)\n")
-        f.write(f"- **Target Major Evaluated**: {', '.join(target_majors_filter) if target_majors_filter else 'All Majors'}\n")
+        f.write(f"- **Target Major Evaluated**: {plan_scope}\n")
         f.write(f"- **Total Learning Outcomes / Performance Indicators Assessed**: {len(assessments_config)}\n\n")
 
         f.write("### Roster Enrollment Breakdown by Major & Section\n\n")
@@ -500,12 +514,12 @@ def extract_assessments(course_dir: str) -> str:
             f.write(f"- **Assessed Assignment**: `{res['matched_col']}`\n")
             f.write(f"- **Passing Criterion**: Score {cfg.get('passing_operator', '>=')} {cfg.get('passing_threshold_percent', 70)}%\n")
             f.write(f"- **Target Benchmark**: {cfg.get('target_pass_rate_percent', 75)}% Pass Rate\n")
-            f.write(f"- **Evaluated Population**: {res['tot_eval']} CS Majors (out of {len(active_students)} total active students across all majors)\n")
+            f.write(f"- **Evaluated Population**: {res['tot_eval']} students — {res['target_major']} (out of {len(active_students)} total active students across all majors)\n")
             f.write(f"- **Overall Pass/Fail Ratio**: **{res['total_ratio']}** (**{res['total_pct']}%**)\n")
             f.write(f"- **Outcome Status**: **{res['overall_status']}**\n\n")
 
-            f.write("### Pass/Fail Ratio & Percentage by Section (CS Majors Only)\n\n")
-            sec_headers = ["Section ID", "Pass / Total Ratio", "Passed Count", "Total CS Students", "Pass Rate (%)"]
+            f.write(f"### Pass/Fail Ratio & Percentage by Section ({res['target_major']})\n\n")
+            sec_headers = ["Section ID", "Pass / Total Ratio", "Passed Count", "Total Evaluated Students", "Pass Rate (%)"]
             sec_rows = []
             for sr in res["sec_summary_rows"]:
                 sec_rows.append([
@@ -525,7 +539,7 @@ def extract_assessments(course_dir: str) -> str:
             f.write(format_markdown_table(sec_headers, sec_rows) + "\n\n")
 
             f.write("### Complete Student Assessment Results Table (All Active Students)\n\n")
-            std_headers = ["Program", "First Name", "Last Name", "Section ID", f"Assessed Score ({res['matched_col']})", "Status"]
+            std_headers = ["Program", "First Name", "Last Name", "Section ID", f"Assessed Score ({res['matched_col']})", "Status", "Included in Assessment"]
             std_rows = []
             for st in res["per_student_rows"]:
                 std_rows.append([
@@ -534,7 +548,8 @@ def extract_assessments(course_dir: str) -> str:
                     st["last_name"],
                     st["section_id"],
                     st["score_display"],
-                    st["status"]
+                    st["status"],
+                    st["Included in Assessment"]
                 ])
             f.write(format_markdown_table(std_headers, std_rows) + "\n\n")
 
@@ -595,14 +610,14 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     row_idx = 1
     ws_summary.cell(row=row_idx, column=1, value=f"{plan.get('course_name', os.path.basename(course_dir))} — Assessment Executive Summary").font = title_font
     row_idx += 1
-    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: {', '.join(plan.get('target_majors', [])) or 'All Majors'} | Active Students: {active_count}").font = regular_font
+    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: Per-assessment majors (see plan below) | Active Students: {active_count}").font = regular_font
     row_idx += 2
 
     # Section 1: Assessment Plan Details
     ws_summary.cell(row=row_idx, column=1, value="1. Assessment Plan Details").font = section_font
     row_idx += 1
 
-    plan_headers = ["Code", "Accreditation", "Assessed Assignment", "Passing Criterion", "Target Benchmark", "Notes"]
+    plan_headers = ["Code", "Accreditation", "Assessed Assignment", "Passing Criterion", "Target Benchmark", "Notes", "Target Major"]
     for col_idx, h in enumerate(plan_headers, 1):
         cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
         cell.font = header_font
@@ -622,7 +637,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
         bm_val = f"{item.get('target_pass_rate_percent', 75):g}% Pass Rate"
         notes_val = item.get("notes", "")
 
-        row_vals = [code_val, acc_val, ass_name_val, crit_val, bm_val, notes_val]
+        row_vals = [code_val, acc_val, ass_name_val, crit_val, bm_val, notes_val, major_label(assessment_majors(plan, item))]
         for col_idx, val in enumerate(row_vals, 1):
             cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
             cell.font = regular_font
@@ -637,7 +652,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     ws_summary.cell(row=row_idx, column=1, value="2. Assessment Summary").font = section_font
     row_idx += 1
 
-    sum_headers = ["Code", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status"]
+    sum_headers = ["Code", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status", "Target Major"]
     for col_idx, h in enumerate(sum_headers, 1):
         cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
         cell.font = header_font
@@ -655,7 +670,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
         pct_str = f"{res.get('total_pct', 0.0)}%"
         status_str = res.get("overall_status", "MET")
 
-        row_vals = [code_val, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str]
+        row_vals = [code_val, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str, res["target_major"]]
         for col_idx, val in enumerate(row_vals, 1):
             cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
             cell.font = regular_font
@@ -682,7 +697,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
         code_val = res.get("code", "")
         matched_col = res.get("matched_col", "")
 
-        ws_summary.cell(row=row_idx, column=1, value=f"Outcome Card: {code_val} ({matched_col})").font = sub_font
+        ws_summary.cell(row=row_idx, column=1, value=f"Outcome Card: {code_val} ({matched_col}) — {res['target_major']}").font = sub_font
         row_idx += 1
 
         card_headers = ["Section ID", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Status"]
@@ -695,7 +710,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
 
         target_rate = float(res["cfg"].get("target_pass_rate_percent", 75.0))
         for sr in res["sec_summary_rows"]:
-            s_pct_val = float(sr["pass_percent"].rstrip("%"))
+            s_pct_val = sr["pass_count"] / sr["total_count"] * 100.0
             s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
             row_vals = [sr["section_id"], sr["pass_count"], sr["total_count"], sr["pass_ratio"], sr["pass_percent"], s_status]
             for col_idx, val in enumerate(row_vals, 1):
@@ -737,7 +752,7 @@ def export_excel_report(course_dir: str, plan: dict, report_assessment_results: 
     ws_results.views.sheetView[0].showGridLines = True
 
     if per_student_export_rows:
-        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major"]
+        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Target Major", "Included in Assessment"]
         for col_idx, h in enumerate(res_headers, 1):
             cell = ws_results.cell(row=1, column=col_idx, value=h)
             cell.font = header_font

@@ -75,11 +75,19 @@ Inside your course directory (`copxxxx-26spring`), create a subdirectory named *
 
 Copy all raw input files exported from Banner/MyUWF and Canvas into `copxxxx-26spring/raw/`:
 - **Raw Roster CSVs**: Official university section rosters (e.g. `CourseRoster_202601_16197.csv`, `CourseRoster_202601_17089.csv`). The section CRN (`16197`, `17089`) is automatically extracted from the filename.
-- **Raw Canvas Gradebook CSV**: Gradebook export from Canvas (e.g. `2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv`).
+- **Raw Canvas Gradebook CSVs**: All instructors’ gradebook exports from Canvas (e.g. `2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv`).
 
 > ⚠️ **Important Data Rule**: Never modify or rename raw input files inside `raw/`. The tool reads raw data pristine and generates processed output files directly in the root of the course directory.
 
 ---
+
+### Multiple instructors and overlapping exports
+
+Put every instructor's export in the same `raw/` directory. Every CSV with `grade` in its filename (case-insensitive) is read. The tool unions assignment columns, aligns identical titles after removing Canvas numeric ID suffixes, and merges students by `SIS User ID`. Roster-only students remain in the output.
+
+Each student's percentage uses points possible from that student's source export, so `40/50` and `80/100` both produce 80%. The Points Possible row is detected with or without Manual Posting metadata. Identical overlapping student records are counted once; complementary blank cells are filled. Conflicting nonblank values or points possible for an overlapping student/assignment raise an error identifying the files and column. Duplicate cleaned titles within one export also raise an error. Resolve conflicting source selections in a separate input directory while preserving originals; no export is silently preferred.
+
+Use matching assignment titles across instructors for automatic alignment. `assignment_column` can select an exact cleaned title; an ambiguous query with multiple scored matches raises an error. Missing or invalid points possible for numeric scores raises an error rather than assuming 100 points. Re-run `run-all` after adding rosters; `extract-assessments` refreshes gradebooks whenever raw exports are available.
 
 ### Step 3: Create the Assessment Plan (`assessment_plan.json`)
 Create a file named **`assessment_plan.json`** directly inside `copxxxx-26spring/` (or place it in `copxxxx-26spring/raw/`).
@@ -90,12 +98,12 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
 {
   "course_name": "COP XXXX - Course Title",
   "semester": "Spring 2026",
-  "target_majors": ["Computer Science"],
   "assessments": [
     {
       "accreditation_type": "ABET",
       "code": "LO.PI 1.1",
       "assessment_name": "Project 1",
+      "target_majors": ["Computer Science"],
       "passing_operator": ">=",
       "passing_threshold_percent": 70.0,
       "target_pass_rate_percent": 75.0,
@@ -105,19 +113,24 @@ This JSON file defines which assignment to assess, passing thresholds, target pa
       "accreditation_type": "ABET",
       "code": "LO.PI 1.2",
       "assessment_name": "Project 2",
+      "target_majors": ["Cybersecurity"],
       "passing_operator": ">=",
       "passing_threshold_percent": 70.0,
       "target_pass_rate_percent": 75.0,
-      "notes": "ABET outcome assessment based on Project 2 for CS majors."
+      "notes": "ABET outcome assessment based on Project 2 for Cybersecurity majors."
     }
   ]
 }
 ```
 
+The example evaluates Project 1 for Computer Science and Project 2 for Cybersecurity in one combined Markdown/Excel report. Each outcome retains its own population, denominator, target, and section totals. Repeat an assignment in separate items to report different majors independently. No pooled pass rate is calculated across unrelated outcomes.
+
+Detailed CSV/Excel rows retain all active students for audit. `Target Major` identifies the item's scope and `Included in Assessment` indicates whether a row contributes to its summary. Sum the count columns to reproduce the summary; do not count all detail rows. A target population with no active students is reported as `NO DATA`. Missing scores among included active students continue to count as failures.
+
 #### Field Explanations:
 - `course_name`: Official title of the course.
 - `semester`: Term and year (e.g., `Spring 2026`).
-- `target_majors`: List of programs to evaluate (e.g. `["Computer Science"]`). Leave empty `[]` to evaluate all enrolled students.
+- `target_majors`: Set this list **inside each assessment item** to select its programs (full names or abbreviations such as `CS` and `Cyber`, case-insensitive). `[]` explicitly selects all active majors. An omitted item field inherits the optional top-level `target_majors`, preserving old plans; if neither is set, all active majors are evaluated. Invalid values such as a string or `null` raise an error.
 - `accreditation_type`: `ABET` or `SACSCOC`.
 - `code`: Learning outcome / performance indicator ID (e.g. `"LO.PI 1.1"`).
 - `assessment_name`: Name/title of the assessed assignment (e.g. `"Project 1"`). Merges assignment query and assessment name into a single clean attribute. Multi-stage fuzzy matching aligns headers automatically without third-party dependencies!
@@ -187,14 +200,14 @@ copxxxx-26spring/
    - Computes student status (`Active` vs. `Withdrawn`).
 
 2. **`merged_gradebook.csv`**:
-   - Merges Canvas gradebook CSV with `combined_roster.csv`.
+   - Combines all Canvas gradebook CSVs with `combined_roster.csv`.
    - Preserves **100% of Canvas grade columns intact**.
    - Attaches `Section Number`, `Major`, `Status`, `Level`, and `Cohort` columns to each student row.
    - Dynamic row parser automatically detects `Points Possible` rows and handles presence/absence of `"Manual Posting"` rows without skipping student data.
 
 3. **`assessment_results.csv`**:
    - Detailed per-student dataset listing every student's Program, Name, Section ID, Assessed Assignment, Assessed Score, and Pass/Fail Status.
-   - Includes helper count columns (`Pass Count` = 1/0 and `Total Student Count` = 1) for instant **Excel / Google Sheets Pivot Tables**.
+   - Includes helper count columns (`Pass Count` = 1/0 and `Total Student Count` = 1 for included students; both are zero outside the item’s target majors) for instant **Excel / Google Sheets Pivot Tables**.
    - See the **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step instructions.
 
 4. **`assessment_summary.csv`**:

@@ -6,8 +6,84 @@ import sys
 import os
 import glob
 import csv
+import re
+import math
 from .rosters import process_rosters
 from .readme import generate_output_readme
+
+
+def discover_gradebooks(raw_dir: str) -> list:
+    """Discover all gradebook exports, including mixed filename capitalization."""
+    return sorted(path for path in glob.glob(os.path.join(raw_dir, "*"))
+                  if os.path.isfile(path) and path.lower().endswith(".csv")
+                  and "grade" in os.path.basename(path).lower())
+
+
+def read_gradebooks(raw_dir: str):
+    """Return union headers, unique students, and points keyed by (SIS ID, column).
+
+    Assignment IDs differ between Canvas courses; equal cleaned titles align.
+    Ambiguous titles within an export and conflicting overlapping records fail
+    before writing outputs, instead of silently selecting a score or denominator.
+    """
+    files = discover_gradebooks(raw_dir)
+    if not files:
+        raise FileNotFoundError(f"No gradebook CSV files found in {raw_dir}")
+    headers, students, points, sources = [], {}, {}, {}
+    for path in files:
+        name = os.path.basename(path)
+        print(f"Processing gradebook file: {name}")
+        with open(path, encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.reader(stream))
+        if not rows:
+            raise ValueError(f"Empty gradebook: {name}")
+        cols = ["Canvas Section" if h.strip() == "Section" else
+                re.sub(r"\s*\(\d+\)$", "", h.strip()) for h in rows[0]]
+        if len(cols) != len(set(cols)):
+            raise ValueError(f"Duplicate assignment titles after removing Canvas IDs in {name}")
+        if not {"Student", "SIS User ID"}.issubset(cols):
+            raise ValueError(f"Missing Student or SIS User ID column in {name}")
+        pts_idx = next((i for i, row in enumerate(rows[1:], 1)
+                        if row and row[0].strip() == "Points Possible"), None)
+        if pts_idx is None:
+            raise ValueError(f"Missing Points Possible row in {name}")
+        maxima = {}
+        for col, value in zip(cols, rows[pts_idx]):
+            try:
+                number = float(value.strip())
+                maxima[col] = number if math.isfinite(number) else None
+            except ValueError:
+                maxima[col] = None
+        headers.extend(c for c in cols if c not in headers)
+        for row in rows[pts_idx + 1:]:
+            record = dict(zip(cols, (v.strip() for v in row)))
+            sid = record.get("SIS User ID", "")
+            if not sid or "Test Student" in record.get("Student", ""):
+                continue
+            existing = students.setdefault(sid, {})
+            for col in cols:
+                value, old = record.get(col, ""), existing.get(col, "")
+                key = (sid, col)
+                if old and value and old != value:
+                    try:
+                        equal = float(old) == float(value)
+                    except ValueError:
+                        equal = False
+                    if not equal:
+                        raise ValueError(f"Conflicting gradebook values for SIS ID {sid}, "
+                                         f"column {col!r}: {sources.get(key)} and {name}")
+                if value:
+                    maximum = maxima.get(col)
+                    if old and points.get(key) != maximum:
+                        raise ValueError(f"Conflicting Points Possible for SIS ID {sid}, "
+                                         f"column {col!r}: {sources.get(key)} and {name}")
+                    existing[col] = value
+                    points[key] = maximum
+                    sources[key] = name
+                else:
+                    existing.setdefault(col, "")
+                    points.setdefault(key, maxima.get(col))
+    return headers, list(students.values()), points
 
 
 def process_gradebook(course_dir: str) -> str:
@@ -29,57 +105,11 @@ def process_gradebook(course_dir: str) -> str:
             if uwfid:
                 roster_map[uwfid] = row
 
-    # Find Canvas gradebook export file
-    gradebook_files = sorted(glob.glob(os.path.join(raw_dir, "*Grades*.csv")))
-    if not gradebook_files:
-        gradebook_files = sorted(glob.glob(os.path.join(raw_dir, "*[Gg]rade*.csv")))
-
-    if not gradebook_files:
-        raise FileNotFoundError(f"No gradebook CSV files found in {raw_dir}")
-
-    gradebook_file = gradebook_files[0]
-    print(f"Processing gradebook file: {os.path.basename(gradebook_file)}")
-
-    with open(gradebook_file, mode="r", encoding="utf-8-sig") as f:
-        reader = list(csv.reader(f))
-
-    if len(reader) < 2:
-        raise ValueError("Gradebook CSV file must contain at least Header and Points Possible rows.")
-
-    import re
-
-    raw_headers = [col.strip() for col in reader[0]]
-
-    gb_headers = []
-    for h in raw_headers:
-        if h == "Section":
-            gb_headers.append("Canvas Section")
-        else:
-            gb_headers.append(re.sub(r'\s*\(\d+\)$', '', h))
-
-    # Dynamically find Points Possible row index and student row start index
-    pts_possible_idx = 1
-    for idx, r in enumerate(reader[1:], 1):
-        r_str = " ".join(r)
-        if "Points Possible" in r_str or (r and "Points Possible" in r[0]):
-            pts_possible_idx = idx
-            break
-
-    student_start_idx = pts_possible_idx + 1
-
+    gb_headers, gradebook_records, _ = read_gradebooks(raw_dir)
     student_records = []
     seen_uwfids = set()
-
-    for row in reader[student_start_idx:]:
-        if not row or not any(row):
-            continue
-
-        row_dict = dict(zip(gb_headers, [val.strip() for val in row]))
-        student_name = row_dict.get("Student", "")
-        sis_id = row_dict.get("SIS User ID", "").strip()
-
-        if "Points Possible" in student_name or "Test Student" in student_name or not sis_id:
-            continue
+    for row_dict in gradebook_records:
+        sis_id = row_dict["SIS User ID"]
 
         uwfid = sis_id
         seen_uwfids.add(uwfid)
@@ -141,10 +171,10 @@ def process_gradebook(course_dir: str) -> str:
     for rec in student_records:
         all_keys.update(rec.keys())
 
-    final_fieldnames = [c for c in id_metadata_cols if c in all_keys]
+    final_fieldnames = [c for c in id_metadata_cols if c in all_keys or c in gb_headers]
     
     for h in gb_headers:
-        if h not in final_fieldnames and h in all_keys:
+        if h not in final_fieldnames:
             final_fieldnames.append(h)
 
     remaining = [c for c in sorted(all_keys) if c not in final_fieldnames]

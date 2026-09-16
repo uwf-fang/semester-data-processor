@@ -1,5 +1,8 @@
 # Pivot Table Reporting Guide for `assessment_results.csv`
 
+For plans with different majors per item, group by `Code`, `Assessment Name`, and `Target Major`, and filter `Included in Assessment` to `Yes`. Both count fields are zero for students outside an item's scope. Sum `Pass Count` and `Total Student Count`; divide their sums to reproduce report pass rates. Keep failures in the denominator. The program comparison examples below require `target_majors: []` (or an item covering all compared programs). Do not pool unrelated outcomes into a single course pass rate.
+
+
 This guide explains how to open `assessment_results.csv` in spreadsheet software (**Microsoft Excel** or **Google Sheets**) and create interactive Pivot Tables for ABET, SACSCOC, and departmental accreditation reporting.
 
 > 💡 **Quick Choice**: You can either directly use the generated multi-tab Excel workbook (**`assessment_report.xlsx`**) with pre-built summary cards out-of-the-box, OR use **`assessment_results.csv`** to build custom manual Pivot Tables as described below!
@@ -27,19 +30,9 @@ When `assessment-data-processor` runs, it generates `assessment_results.csv` con
 
 ---
 
-## 2. How to Filter and Show ONLY 'Pass' Status
+## 2. How to Show ONLY 'Pass' Status
 
 If you prefer a clean table showing only the **Pass** counts and **Pass Rate %** without displaying the `Fail` column:
-
-### Method 1: Filter the Column Header (Direct Column Filtering)
-- **In Excel**:
-  1. Click the filter dropdown arrow $\boldsymbol{\blacktriangledown}$ next to **`Column Labels`** (or `Pass/Fail Status`) at the top of the Pivot Table.
-  2. Uncheck **`Fail`** (leave only **`Pass`** checked).
-  3. Click **OK**. The `Fail` column will disappear, showing only `Pass`, `Total Enrolled`, and `Pass Rate %`.
-- **In Google Sheets**:
-  1. In the **Pivot Table Editor** side pane, scroll down to **Filters**.
-  2. Click **Add** $\rightarrow$ select **`Pass/Fail Status`**.
-  3. Click **Status** $\rightarrow$ uncheck **`Fail`** (leave **`Pass`** checked).
 
 ### Method 2: Omit Columns Area Entirely (Cleanest Approach)
 If you don't place `Pass/Fail Status` in the **Columns** box at all, you can simply use the numeric helper fields in **Values**:

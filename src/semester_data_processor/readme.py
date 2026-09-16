@@ -148,12 +148,12 @@ def generate_output_readme(course_dir: str, action_name: str = "Initial Ingestio
     lines.append("   - Normalizes student program abbreviations (`CS`, `SD`, `Cyber`, `CE`, `EE`), extracts 5-digit section CRNs, and tracks student withdrawal status (`Active` vs. `Withdrawn`).\n")
 
     lines.append("2. **`merged_gradebook.csv`**:")
-    lines.append("   - Full Canvas gradebook export integrated with student roster metadata (`Section Number`, `Major`, `Status`, `Level`, `Cohort`).")
+    lines.append("   - All Canvas gradebook exports consolidated and integrated with student roster metadata (`Section Number`, `Major`, `Status`, `Level`, `Cohort`).")
     lines.append("   - Preserves 100% of raw Canvas grade columns intact without altering original student scores.\n")
 
     lines.append("3. **`assessment_results.csv`**:")
     lines.append("   - Detailed per-student assessment outcome evaluation table.")
-    lines.append("   - Includes numerical helper columns (`Pass Count` = 1/0, `Total Student Count` = 1) ready for custom Pivot Table analysis in Excel or Google Sheets.\n")
+    lines.append("   - Includes numerical helper columns (`Pass Count` = 1/0, `Total Student Count` = 1 for the item's target majors; both zero outside that population) ready for custom Pivot Table analysis in Excel or Google Sheets.\n")
 
     lines.append("4. **`assessment_summary.csv`**:")
     lines.append("   - Aggregated outcome assessment summary metrics per section and total sum across all sections.")
@@ -164,7 +164,7 @@ def generate_output_readme(course_dir: str, action_name: str = "Initial Ingestio
     lines.append("   - Features styled outcome cards, enrollment breakdowns by section & major, and outcome evaluation totals for ABET / SACSCOC review.\n")
 
     lines.append("6. **`assessment_plan.json`**:")
-    lines.append("   - Accreditation configuration plan specifying evaluated learning outcomes, assignment columns, passing rules, and targeted majors.\n")
+    lines.append("   - Accreditation configuration plan specifying evaluated learning outcomes, assignment columns, passing rules, and per-assessment `target_majors` (with an optional plan-wide default).\n")
 
     lines.append("7. **`raw/` Subdirectory**:")
     lines.append("   - Preserves pristine raw section roster CSVs and Canvas gradebook exports. Original raw data is strictly kept untouched.\n")
