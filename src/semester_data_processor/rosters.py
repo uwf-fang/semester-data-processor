@@ -84,6 +84,36 @@ def load_instructor_mapping(course_dir: str) -> dict:
     return sec_to_inst
 
 
+def load_section_term_mapping(course_dir: str) -> dict:
+    """
+    Extracts section CRN to term code mapping from raw roster filenames and section files.
+    e.g. CourseRoster_202508_86053.csv -> {'86053': '202508'}
+         202601-sections.txt -> {'16197': '202601', ...}
+    """
+    sec_to_term = {}
+    search_dirs = [os.path.join(course_dir, "raw"), course_dir]
+    for d in search_dirs:
+        if not os.path.exists(d):
+            continue
+        try:
+            for fname in os.listdir(d):
+                m_r = re.search(r'CourseRoster_(20\d{4})_(\d+)', fname, re.IGNORECASE)
+                if m_r:
+                    sec_to_term[m_r.group(2)] = m_r.group(1)
+                m_s = re.search(r'(20\d{4})[-_]sections', fname, re.IGNORECASE)
+                if m_s:
+                    term = m_s.group(1)
+                    parsed = parse_sections_text(os.path.join(d, fname))
+                    for s in parsed:
+                        sec_to_term[s] = term
+                m_g = re.search(r'_(\d{5})_[A-Za-z0-9]+_(20\d{4})\.csv', fname, re.IGNORECASE)
+                if m_g:
+                    sec_to_term[m_g.group(1)] = m_g.group(2)
+        except Exception:
+            pass
+    return sec_to_term
+
+
 def process_rosters(course_dir: str) -> str:
     raw_dir = os.path.join(course_dir, "raw")
     if not os.path.exists(raw_dir):
@@ -106,7 +136,7 @@ def process_rosters(course_dir: str) -> str:
     fieldnames_set = set()
 
     priority_cols = [
-        "Anonymous ID", "Instructor", "UWFID", "Last Name", "First Name", "Preferred Name", "Full Name",
+        "Anonymous ID", "Instructor", "Term", "UWFID", "Last Name", "First Name", "Preferred Name", "Full Name",
         "Email", "Section Number", "Major", "Level", "Program", "Student Type",
         "Registered", "Withdrawn", "Status", "Cohort"
     ]
@@ -115,7 +145,10 @@ def process_rosters(course_dir: str) -> str:
         filename = os.path.basename(filepath)
         print(f"  - Reading {filename}")
 
-        # Extract 5-digit section CRN from filename (e.g., CourseRoster_202601_18451 (1).csv -> 18451)
+        # Extract 6-digit term code and 5-digit section CRN from filename
+        m_term = re.search(r'CourseRoster_(20\d{4})_', filename) or re.search(r'_(20\d{4})\b', filename)
+        term_code = m_term.group(1) if m_term else ""
+
         section_match = re.search(r'_(\d{5})\b', filename) or re.search(r'_(\d+)', filename)
         section_number = section_match.group(1) if section_match else "Unknown"
 
@@ -127,10 +160,11 @@ def process_rosters(course_dir: str) -> str:
             for row in reader:
                 cleaned_row = {k.strip(): (v.strip() if v else "") for k, v in row.items()}
                 
-                # Explicit Section Number column
+                # Explicit Section Number and Term columns
                 cleaned_row["Section Number"] = section_number
                 if "Section" not in cleaned_row or not cleaned_row["Section"]:
                     cleaned_row["Section"] = section_number
+                cleaned_row["Term"] = term_code
 
                 # Map Instructor
                 cleaned_row["Instructor"] = instructor_map.get(section_number, "")
@@ -162,28 +196,31 @@ def process_rosters(course_dir: str) -> str:
 
                 fieldnames_set.update(cleaned_row.keys())
 
-                # Deduplicate by UWFID + Section Number
+                # Deduplicate by UWFID + Section Number + Term
                 uwfid = cleaned_row.get("UWFID", "")
-                dedup_key = (uwfid, section_number)
+                dedup_key = (uwfid, section_number, term_code)
                 if dedup_key not in seen_keys:
                     seen_keys.add(dedup_key)
                     all_students.append(cleaned_row)
 
-    # Sort students by Section Number, then Last Name, First Name
-    all_students.sort(key=lambda s: (s.get("Section Number", ""), s.get("Last Name", "").lower(), s.get("First Name", "").lower()))
+    # Sort students by Term, Section Number, then Last Name, First Name
+    all_students.sort(key=lambda s: (s.get("Term", ""), s.get("Section Number", ""), s.get("Last Name", "").lower(), s.get("First Name", "").lower()))
 
     # Assign Anonymous ID (S1, S2, ...) per section for active students
     sec_counters = {}
     for s in all_students:
         sec = s.get("Section Number", "Unknown")
+        term = s.get("Term", "")
+        sec_key = f"{term}_{sec}" if term else sec
         if s.get("Status") == "Active":
-            c = sec_counters.get(sec, 0) + 1
-            sec_counters[sec] = c
+            c = sec_counters.get(sec_key, 0) + 1
+            sec_counters[sec_key] = c
             s["Anonymous ID"] = f"S{c}"
         else:
             s["Anonymous ID"] = ""
     fieldnames_set.add("Anonymous ID")
     fieldnames_set.add("Instructor")
+    fieldnames_set.add("Term")
 
     # Final overall sort by Last Name, First Name
     all_students.sort(key=lambda s: (s.get("Last Name", "").lower(), s.get("First Name", "").lower()))

@@ -102,8 +102,11 @@ def process_gradebook(course_dir: str) -> str:
         roster_fieldnames = reader.fieldnames or []
         for row in reader:
             uwfid = row.get("UWFID", "").strip()
+            sec = row.get("Section Number", "").strip()
             if uwfid:
                 roster_map[uwfid] = row
+                if sec:
+                    roster_map[(uwfid, sec)] = row
 
     gb_headers, gradebook_records, _ = read_gradebooks(raw_dir)
     student_records = []
@@ -114,8 +117,13 @@ def process_gradebook(course_dir: str) -> str:
         uwfid = sis_id
         seen_uwfids.add(uwfid)
 
+        # Attempt to match section from Canvas Section (e.g. 18451_COP4020)
+        csec = row_dict.get("Canvas Section", "")
+        sec_m = re.search(r'\b(\d{5})\b', csec)
+        sec_key = sec_m.group(1) if sec_m else ""
+
         merged_row = {}
-        roster_info = roster_map.get(uwfid, {})
+        roster_info = roster_map.get((uwfid, sec_key), roster_map.get(uwfid, {}))
 
         # 1. Canvas identification fields first
         merged_row["Student"] = row_dict.get("Student", "")
@@ -124,14 +132,15 @@ def process_gradebook(course_dir: str) -> str:
         merged_row["SIS Login ID"] = row_dict.get("SIS Login ID", "")
 
         # 2. External roster attributes
-        merged_row["Section Number"] = roster_info.get("Section Number", "")
+        merged_row["Section Number"] = roster_info.get("Section Number", sec_key)
         merged_row["Instructor"] = roster_info.get("Instructor", "")
         merged_row["Anonymous ID"] = roster_info.get("Anonymous ID", "")
+        merged_row["Term"] = roster_info.get("Term", "")
         merged_row["Major"] = roster_info.get("Major", roster_info.get("Program", ""))
         merged_row["Status"] = roster_info.get("Status", "Active")
         merged_row["Level"] = roster_info.get("Level", "")
         merged_row["Cohort"] = roster_info.get("Cohort", "")
-        merged_row["Canvas Section"] = row_dict.get("Canvas Section", "")
+        merged_row["Canvas Section"] = csec
 
         # 3. Include ALL gradebook columns from Canvas intact
         skip_initial = {"Student", "ID", "SIS User ID", "SIS Login ID", "Canvas Section"}
@@ -146,7 +155,10 @@ def process_gradebook(course_dir: str) -> str:
         student_records.append(merged_row)
 
     # Check for any roster students not in Canvas gradebook
-    for uwfid, roster_info in roster_map.items():
+    for key, roster_info in roster_map.items():
+        if isinstance(key, tuple):
+            continue
+        uwfid = key
         if uwfid not in seen_uwfids:
             merged_row = {
                 "Student": roster_info.get("Full Name", ""),
@@ -156,6 +168,7 @@ def process_gradebook(course_dir: str) -> str:
                 "Section Number": roster_info.get("Section Number", ""),
                 "Instructor": roster_info.get("Instructor", ""),
                 "Anonymous ID": roster_info.get("Anonymous ID", ""),
+                "Term": roster_info.get("Term", ""),
                 "Major": roster_info.get("Major", roster_info.get("Program", "")),
                 "Status": roster_info.get("Status", "Active"),
                 "Level": roster_info.get("Level", ""),
@@ -169,7 +182,7 @@ def process_gradebook(course_dir: str) -> str:
 
     student_records.sort(key=lambda r: r.get("Student", r.get("Last Name", "")).lower())
 
-    id_metadata_cols = ["Student", "ID", "SIS User ID", "SIS Login ID", "Section Number", "Instructor", "Anonymous ID", "Major", "Status", "Level", "Cohort", "Canvas Section"]
+    id_metadata_cols = ["Student", "ID", "SIS User ID", "SIS Login ID", "Section Number", "Instructor", "Anonymous ID", "Term", "Major", "Status", "Level", "Cohort", "Canvas Section"]
     
     all_keys = set()
     for rec in student_records:

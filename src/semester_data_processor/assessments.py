@@ -15,7 +15,7 @@ import difflib
 import math
 from collections import defaultdict
 from .gradebook import process_gradebook, discover_gradebooks, read_gradebooks
-from .rosters import load_instructor_mapping
+from .rosters import load_instructor_mapping, load_section_term_mapping
 from .readme import generate_output_readme
 
 
@@ -511,8 +511,10 @@ def extract_assessments(course_dir: str) -> str:
         f.write(f"- **Academic Year**: {term_info['academic_year_label']}\n")
         if plan.get("semester"):
             f.write(f"- **Semester**: {plan.get('semester')}\n")
+        elif term_info.get("is_both"):
+            f.write(f"- **Active Term**: Fall & Spring ({term_info['fall_term']} & {term_info['spring_term']})\n")
         else:
-            active_sem_name = "Fall" if term_info["is_fall"] else "Spring"
+            active_sem_name = "Fall" if term_info["has_fall"] else "Spring"
             f.write(f"- **Active Term**: {active_sem_name} ({term_info['active_term']})\n")
         f.write(f"- **Total Roster Registrations**: {total_enrolled} ({len(active_students)} Active, {len(withdrawn_students)} Withdrawn)\n")
         f.write(f"- **Target Major Evaluated**: {plan_scope}\n")
@@ -711,8 +713,27 @@ def resolve_course_and_academic_year(course_dir: str, plan: dict) -> dict:
             fall_term = f"{y - 1}08"
             spring_term = f"{y}01"
 
-    is_fall = bool(active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08")))
-    is_spring = not is_fall
+    has_fall = any(t.endswith("08") for t in raw_terms)
+    has_spring = any(t.endswith("01") for t in raw_terms)
+    is_both = has_fall and has_spring
+
+    if is_both:
+        is_fall = True
+        is_spring = True
+        active_term = f"{fall_term} & {spring_term}"
+    elif has_fall:
+        is_fall = True
+        is_spring = False
+        active_term = fall_term
+    elif has_spring:
+        is_fall = False
+        is_spring = True
+        active_term = spring_term
+    else:
+        is_fall = bool(active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08")))
+        is_spring = not is_fall
+        has_fall = is_fall
+        has_spring = is_spring
 
     return {
         "course_code": course_code,
@@ -721,8 +742,31 @@ def resolve_course_and_academic_year(course_dir: str, plan: dict) -> dict:
         "active_term": active_term,
         "is_fall": is_fall,
         "is_spring": is_spring,
+        "has_fall": has_fall,
+        "has_spring": has_spring,
+        "is_both": is_both,
         "academic_year_label": f"{fall_term[:4]}-{spring_term[2:4]}"
     }
+
+
+def build_sec_cols(sections: list) -> dict:
+    """Computes column indices for side-by-side section tables in Excel."""
+    sec_cols = {}
+    for idx, sec_id in enumerate(sections):
+        if idx == 0:
+            c_std, c_scr, c_tot = 1, 3, 4
+        elif idx == 1:
+            c_std, c_scr, c_tot = 7, 8, 9
+        else:
+            c_std = 7 + (idx - 1) * 3
+            c_scr = c_std + 1
+            c_tot = c_std + 2
+        sec_cols[sec_id] = {
+            "std": c_std,
+            "score": c_scr,
+            "total": c_tot
+        }
+    return sec_cols
 
 
 def export_academic_year_excel_report(course_dir: str, plan: dict, report_assessment_results: list, instructor_map: dict = None) -> list:
@@ -803,27 +847,41 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
         if not sections:
             sections = ["Unknown"]
 
-        # Map each section to its column indices
-        # Section 0: Student=Col A (1), Score=Col C (3), Total=Col D (4)
-        # Section 1: Student=Col G (7), Score=Col H (8), Total=Col I (9)
-        # Section k (k >= 2): Student = 7 + (k-1)*3, Score = Student + 1, Total = Student + 2
-        sec_cols = {}
-        for idx, sec_id in enumerate(sections):
-            if idx == 0:
-                c_std, c_scr, c_tot = 1, 3, 4
-            elif idx == 1:
-                c_std, c_scr, c_tot = 7, 8, 9
+        # Partition sections into Fall and Spring
+        sec_to_term = load_section_term_mapping(course_dir)
+        fall_sections = []
+        spring_sections = []
+        for s in sections:
+            t = sec_to_term.get(s, "")
+            if t == fall_term or t.endswith("08"):
+                fall_sections.append(s)
+            elif t == spring_term or t.endswith("01"):
+                spring_sections.append(s)
             else:
-                c_std = 7 + (idx - 1) * 3
-                c_scr = c_std + 1
-                c_tot = c_std + 2
-            sec_cols[sec_id] = {
-                "std": c_std,
-                "score": c_scr,
-                "total": c_tot
-            }
+                s_terms = set(st.get("Term", "") for st in sec_group[s])
+                if fall_term in s_terms or any(x.endswith("08") for x in s_terms):
+                    fall_sections.append(s)
+                elif spring_term in s_terms or any(x.endswith("01") for x in s_terms):
+                    spring_sections.append(s)
+                elif term_info.get("has_fall") and not term_info.get("has_spring"):
+                    fall_sections.append(s)
+                elif term_info.get("has_spring") and not term_info.get("has_fall"):
+                    spring_sections.append(s)
+                elif term_info.get("is_fall"):
+                    fall_sections.append(s)
+                else:
+                    spring_sections.append(s)
 
-        max_used_col = max(max(c["total"] for c in sec_cols.values()), 17)
+        # Build column maps for each semester
+        ph_fall = spring_sections[:2] if len(spring_sections) >= 2 else ["Unknown1", "Unknown2"]
+        fall_cols = build_sec_cols(fall_sections if fall_sections else ph_fall)
+
+        ph_spring = fall_sections[:2] if len(fall_sections) >= 2 else ["Unknown1", "Unknown2"]
+        spring_cols = build_sec_cols(spring_sections if spring_sections else ph_spring)
+
+        max_fall = max(c["total"] for c in fall_cols.values()) if fall_cols else 12
+        max_spring = max(c["total"] for c in spring_cols.values()) if spring_cols else 12
+        max_used_col = max(max_fall, max_spring, 17)
 
         # Row 1: Merged Banner title
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_used_col)
@@ -831,96 +889,18 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
         cell_a1.font = font_bold
         cell_a1.alignment = align_center
 
-        max_active_students = max((len(sec_group[s]) for s in sections), default=0)
-        num_student_rows = max(max_active_students, 11)
-
-        if is_spring:
-            # Fall Block: Unpopulated placeholder
-            ws.cell(5, 1, value=float(fall_term) if fall_term.isdigit() else fall_term).font = font_bold
-            for s_id, cols in sec_cols.items():
-                ws.cell(5, cols["score"], value=display_code).font = font_base
-                ws.cell(5, cols["score"]).alignment = align_center
-                ws.cell(6, cols["std"], value="Student").font = font_base
-                ws.cell(6, cols["std"]).alignment = align_center
-                if s_id == sections[0]:
-                    ws.cell(6, cols["score"], value="Y/N").font = font_base
-                    ws.cell(6, cols["score"]).alignment = align_center
-
-            ws.cell(24, 1, value="Course total").font = font_base
-            ws.cell(24, 1).alignment = align_center
-            ws.cell(25, 1, value=f"Total {fall_term}").font = font_base
-            ws.cell(25, 1).alignment = align_center
-
-            for s_id, cols in sec_cols.items():
-                scr_col_letter = get_column_letter(cols["score"])
-                ws.cell(25, cols["score"], value=f'=countif({scr_col_letter}7:{scr_col_letter}23,"=Y")').font = font_base
-                ws.cell(25, cols["score"]).alignment = align_center
-                ws.cell(25, cols["total"], value=f'=sum(countif({scr_col_letter}7:{scr_col_letter}22,"Y"),countif({scr_col_letter}7:{scr_col_letter}22,"N"))').font = font_base
-                ws.cell(25, cols["total"]).alignment = align_center
-
-            fall_total_row = 25
-
-            # Spring Block: Starts at row 27
-            r_sp_inst = 27
-            r_sp_crn = 28
-            r_sp_lo = 29
-            r_sp_std_hdr = 30
-            r_sp_data_start = 31
-            r_sp_data_end = r_sp_data_start + num_student_rows - 1
-            r_sp_total = r_sp_data_end + 3
-
-            ws.cell(r_sp_inst, 16, value="Edit if professors or # of sections change").font = font_base
-            ws.cell(r_sp_lo, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
-            ws.cell(r_sp_total, 1, value=f"Total {spring_term}").font = font_bold
-            ws.cell(r_sp_total, 1).alignment = align_center
-
-            for s_id in sections:
-                cols = sec_cols[s_id]
-                inst_name = instructor_map.get(s_id, "")
-                ws.cell(r_sp_inst, cols["score"], value=inst_name).font = font_bold
-                ws.cell(r_sp_inst, cols["score"]).alignment = align_center
-
-                crn_val = float(s_id) if s_id.isdigit() else s_id
-                ws.cell(r_sp_crn, cols["score"], value=crn_val).font = font_base
-                ws.cell(r_sp_crn, cols["score"]).alignment = align_center
-
-                ws.cell(r_sp_lo, cols["score"], value=display_code).font = font_base
-                ws.cell(r_sp_lo, cols["score"]).alignment = align_center
-
-                ws.cell(r_sp_std_hdr, cols["std"], value="Student").font = font_base
-                ws.cell(r_sp_std_hdr, cols["std"]).alignment = align_center
-                if s_id == sections[0]:
-                    ws.cell(r_sp_std_hdr, cols["score"], value="Y/N").font = font_base
-                    ws.cell(r_sp_std_hdr, cols["score"]).alignment = align_center
-
-                # Populate student rows
-                s_list = sec_group[s_id]
-                scr_col_letter = get_column_letter(cols["score"])
-                for s_idx, st in enumerate(s_list):
-                    r_curr = r_sp_data_start + s_idx
-                    ws.cell(r_curr, cols["std"], value=st.get("Anonymous ID", f"S{s_idx+1}")).font = font_base
-                    ws.cell(r_curr, cols["std"]).alignment = align_center
-
-                    score_letter = "y" if st["is_pass"] else "n"
-                    ws.cell(r_curr, cols["score"], value=score_letter).font = font_base
-                    ws.cell(r_curr, cols["score"]).alignment = align_center
-
-                # Formulas for Spring Total
-                ws.cell(r_sp_total, cols["score"], value=f'=countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"=Y")').font = font_base
-                ws.cell(r_sp_total, cols["score"]).alignment = align_center
-                ws.cell(r_sp_total, cols["total"], value=f'=sum(countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"Y"),countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"N"))').font = font_base
-                ws.cell(r_sp_total, cols["total"]).alignment = align_center
-
-            spring_total_row = r_sp_total
-
-        else:
-            # Fall Block: Active
+        # ==========================================
+        # Fall Block (Rows 3 - 25+)
+        # ==========================================
+        if fall_sections:
             r_fa_inst = 3
             r_fa_crn = 4
             r_fa_lo = 5
             r_fa_std_hdr = 6
             r_fa_data_start = 7
-            r_fa_data_end = r_fa_data_start + num_student_rows - 1
+            max_fa_students = max((len(sec_group[s]) for s in fall_sections), default=0)
+            num_fa_student_rows = max(max_fa_students, 11)
+            r_fa_data_end = r_fa_data_start + num_fa_student_rows - 1
             r_fa_total = r_fa_data_end + 2
 
             ws.cell(r_fa_lo, 1, value=float(fall_term) if fall_term.isdigit() else fall_term).font = font_bold
@@ -929,8 +909,8 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
             ws.cell(r_fa_total, 1, value=f"Total {fall_term}").font = font_bold
             ws.cell(r_fa_total, 1).alignment = align_center
 
-            for s_id in sections:
-                cols = sec_cols[s_id]
+            for s_id in fall_sections:
+                cols = fall_cols[s_id]
                 inst_name = instructor_map.get(s_id, "")
                 ws.cell(r_fa_inst, cols["score"], value=inst_name).font = font_bold
                 ws.cell(r_fa_inst, cols["score"]).alignment = align_center
@@ -944,11 +924,10 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
 
                 ws.cell(r_fa_std_hdr, cols["std"], value="Student").font = font_base
                 ws.cell(r_fa_std_hdr, cols["std"]).alignment = align_center
-                if s_id == sections[0]:
+                if s_id == fall_sections[0]:
                     ws.cell(r_fa_std_hdr, cols["score"], value="Y/N").font = font_base
                     ws.cell(r_fa_std_hdr, cols["score"]).alignment = align_center
 
-                # Populate student rows
                 s_list = sec_group[s_id]
                 scr_col_letter = get_column_letter(cols["score"])
                 for s_idx, st in enumerate(s_list):
@@ -960,28 +939,108 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
                     ws.cell(r_curr, cols["score"], value=score_letter).font = font_base
                     ws.cell(r_curr, cols["score"]).alignment = align_center
 
-                # Formulas for Fall Total
                 ws.cell(r_fa_total, cols["score"], value=f'=countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"=Y")').font = font_base
                 ws.cell(r_fa_total, cols["score"]).alignment = align_center
                 ws.cell(r_fa_total, cols["total"], value=f'=sum(countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"Y"),countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"N"))').font = font_base
                 ws.cell(r_fa_total, cols["total"]).alignment = align_center
 
             fall_total_row = r_fa_total
+        else:
+            # Fall placeholder (unpopulated)
+            ws.cell(5, 1, value=float(fall_term) if fall_term.isdigit() else fall_term).font = font_bold
+            for s_id, cols in fall_cols.items():
+                ws.cell(5, cols["score"], value=display_code).font = font_base
+                ws.cell(5, cols["score"]).alignment = align_center
+                ws.cell(6, cols["std"], value="Student").font = font_base
+                ws.cell(6, cols["std"]).alignment = align_center
+                if s_id == list(fall_cols.keys())[0]:
+                    ws.cell(6, cols["score"], value="Y/N").font = font_base
+                    ws.cell(6, cols["score"]).alignment = align_center
 
-            # Spring Block: Unpopulated placeholder
-            r_sp_start = fall_total_row + 2
+            ws.cell(24, 1, value="Course total").font = font_base
+            ws.cell(24, 1).alignment = align_center
+            ws.cell(25, 1, value=f"Total {fall_term}").font = font_bold
+            ws.cell(25, 1).alignment = align_center
+
+            for s_id, cols in fall_cols.items():
+                scr_col_letter = get_column_letter(cols["score"])
+                ws.cell(25, cols["score"], value=f'=countif({scr_col_letter}7:{scr_col_letter}23,"=Y")').font = font_base
+                ws.cell(25, cols["score"]).alignment = align_center
+                ws.cell(25, cols["total"], value=f'=sum(countif({scr_col_letter}7:{scr_col_letter}22,"Y"),countif({scr_col_letter}7:{scr_col_letter}22,"N"))').font = font_base
+                ws.cell(25, cols["total"]).alignment = align_center
+
+            fall_total_row = 25
+
+        # ==========================================
+        # Spring Block (Starts below Fall Total)
+        # ==========================================
+        r_sp_start = fall_total_row + 2
+        if spring_sections:
+            r_sp_inst = r_sp_start
+            r_sp_crn = r_sp_start + 1
+            r_sp_lo = r_sp_start + 2
+            r_sp_std_hdr = r_sp_start + 3
+            r_sp_data_start = r_sp_start + 4
+            max_sp_students = max((len(sec_group[s]) for s in spring_sections), default=0)
+            num_sp_student_rows = max(max_sp_students, 11)
+            r_sp_data_end = r_sp_data_start + num_sp_student_rows - 1
+            r_sp_total = r_sp_data_end + 3
+
+            ws.cell(r_sp_inst, 16, value="Edit if professors or # of sections change").font = font_base
+            ws.cell(r_sp_lo, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
+            ws.cell(r_sp_total, 1, value=f"Total {spring_term}").font = font_bold
+            ws.cell(r_sp_total, 1).alignment = align_center
+
+            for s_id in spring_sections:
+                cols = spring_cols[s_id]
+                inst_name = instructor_map.get(s_id, "")
+                ws.cell(r_sp_inst, cols["score"], value=inst_name).font = font_bold
+                ws.cell(r_sp_inst, cols["score"]).alignment = align_center
+
+                crn_val = float(s_id) if s_id.isdigit() else s_id
+                ws.cell(r_sp_crn, cols["score"], value=crn_val).font = font_base
+                ws.cell(r_sp_crn, cols["score"]).alignment = align_center
+
+                ws.cell(r_sp_lo, cols["score"], value=display_code).font = font_base
+                ws.cell(r_sp_lo, cols["score"]).alignment = align_center
+
+                ws.cell(r_sp_std_hdr, cols["std"], value="Student").font = font_base
+                ws.cell(r_sp_std_hdr, cols["std"]).alignment = align_center
+                if s_id == spring_sections[0]:
+                    ws.cell(r_sp_std_hdr, cols["score"], value="Y/N").font = font_base
+                    ws.cell(r_sp_std_hdr, cols["score"]).alignment = align_center
+
+                s_list = sec_group[s_id]
+                scr_col_letter = get_column_letter(cols["score"])
+                for s_idx, st in enumerate(s_list):
+                    r_curr = r_sp_data_start + s_idx
+                    ws.cell(r_curr, cols["std"], value=st.get("Anonymous ID", f"S{s_idx+1}")).font = font_base
+                    ws.cell(r_curr, cols["std"]).alignment = align_center
+
+                    score_letter = "y" if st["is_pass"] else "n"
+                    ws.cell(r_curr, cols["score"], value=score_letter).font = font_base
+                    ws.cell(r_curr, cols["score"]).alignment = align_center
+
+                ws.cell(r_sp_total, cols["score"], value=f'=countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"=Y")').font = font_base
+                ws.cell(r_sp_total, cols["score"]).alignment = align_center
+                ws.cell(r_sp_total, cols["total"], value=f'=sum(countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"Y"),countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"N"))').font = font_base
+                ws.cell(r_sp_total, cols["total"]).alignment = align_center
+
+            spring_total_row = r_sp_total
+        else:
+            # Spring placeholder (unpopulated)
             ws.cell(r_sp_start, 16, value="Edit if professors or # of sections change").font = font_base
             ws.cell(r_sp_start + 2, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
             spring_total_row = r_sp_start + 15
             ws.cell(spring_total_row, 1, value=f"Total {spring_term}").font = font_bold
             ws.cell(spring_total_row, 1).alignment = align_center
 
-            for s_id, cols in sec_cols.items():
+            for s_id, cols in spring_cols.items():
                 ws.cell(r_sp_start + 2, cols["score"], value=display_code).font = font_base
                 ws.cell(r_sp_start + 2, cols["score"]).alignment = align_center
                 ws.cell(r_sp_start + 3, cols["std"], value="Student").font = font_base
                 ws.cell(r_sp_start + 3, cols["std"]).alignment = align_center
-                if s_id == sections[0]:
+                if s_id == list(spring_cols.keys())[0]:
                     ws.cell(r_sp_start + 3, cols["score"], value="Y/N").font = font_base
                     ws.cell(r_sp_start + 3, cols["score"]).alignment = align_center
 
@@ -991,7 +1050,9 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
                 ws.cell(spring_total_row, cols["total"], value=f'=sum(countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"Y"),countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"N"))').font = font_base
                 ws.cell(spring_total_row, cols["total"]).alignment = align_center
 
+        # ==========================================
         # Summary Block below Spring Total
+        # ==========================================
         r_sum_hdr = spring_total_row + 2
         ws.cell(r_sum_hdr, 3, value="Fall").font = font_bold
         ws.cell(r_sum_hdr, 8, value="Spring").font = font_bold
@@ -1000,15 +1061,17 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
         ws.cell(r_sem_tot, 1, value="Semester Totals").font = font_bold
         ws.cell(r_sem_tot, 1).alignment = align_center
 
-        fall_scr_sum = "+".join(f"{get_column_letter(c['score'])}{fall_total_row}" for c in sec_cols.values())
-        fall_tot_sum = "+".join(f"{get_column_letter(c['total'])}{fall_total_row}" for c in sec_cols.values())
+        fall_active_cols = [fall_cols[s] for s in fall_sections] if fall_sections else list(fall_cols.values())
+        fall_scr_sum = "+".join(f"{get_column_letter(c['score'])}{fall_total_row}" for c in fall_active_cols)
+        fall_tot_sum = "+".join(f"{get_column_letter(c['total'])}{fall_total_row}" for c in fall_active_cols)
         ws.cell(r_sem_tot, 3, value=f"={fall_scr_sum}").font = font_base
         ws.cell(r_sem_tot, 3).alignment = align_center
         ws.cell(r_sem_tot, 4, value=f"={fall_tot_sum}").font = font_base
         ws.cell(r_sem_tot, 4).alignment = align_center
 
-        sp_scr_sum = "+".join(f"{get_column_letter(c['score'])}{spring_total_row}" for c in sec_cols.values())
-        sp_tot_sum = "+".join(f"{get_column_letter(c['total'])}{spring_total_row}" for c in sec_cols.values())
+        spring_active_cols = [spring_cols[s] for s in spring_sections] if spring_sections else list(spring_cols.values())
+        sp_scr_sum = "+".join(f"{get_column_letter(c['score'])}{spring_total_row}" for c in spring_active_cols)
+        sp_tot_sum = "+".join(f"{get_column_letter(c['total'])}{spring_total_row}" for c in spring_active_cols)
         ws.cell(r_sem_tot, 8, value=f"={sp_scr_sum}").font = font_base
         ws.cell(r_sem_tot, 8).alignment = align_center
         ws.cell(r_sem_tot, 9, value=f"={sp_tot_sum}").font = font_base
