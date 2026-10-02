@@ -159,6 +159,38 @@ class TestAcademicYearReport(unittest.TestCase):
 
         wb.close()
 
+    def test_academic_year_25_26_format(self):
+        """Test academic_year: '25-26' format without semester or term_code."""
+        from semester_data_processor.assessments import resolve_course_and_academic_year
+
+        plan = {
+            "course_name": "COP 4534 - DSA 2",
+            "academic_year": "25-26",
+            "target_majors": ["Computer Science"],
+            "assessments": []
+        }
+
+        # Simulate a Fall directory with raw roster
+        fall_dir = tempfile.mkdtemp(prefix="cop4534-25-26_")
+        try:
+            raw_fall = os.path.join(fall_dir, "raw")
+            os.makedirs(raw_fall, exist_ok=True)
+            with open(os.path.join(raw_fall, "CourseRoster_202508_86053.csv"), "w") as f:
+                f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
+            with open(os.path.join(raw_fall, "202508-sections.txt"), "w") as f:
+                f.write("Fang 86053\n")
+
+            info = resolve_course_and_academic_year(fall_dir, plan)
+            self.assertEqual(info["course_code"], "COP4534")
+            self.assertEqual(info["fall_term"], "202508")
+            self.assertEqual(info["spring_term"], "202601")
+            self.assertEqual(info["active_term"], "202508")
+            self.assertTrue(info["is_fall"])
+            self.assertFalse(info["is_spring"])
+            self.assertEqual(info["academic_year_label"], "2025-26")
+        finally:
+            shutil.rmtree(fall_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

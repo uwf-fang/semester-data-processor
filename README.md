@@ -6,19 +6,19 @@ It automates:
 1. **Roster Consolidation**: Merging multi-section section rosters, extracting 5-digit section CRNs, and normalizing student major abbreviations (`CS`, `SD`, `Cyber`, `CE`, `EE`).
 2. **Gradebook Merging**: Merging Canvas gradebook exports while preserving **100% of Canvas grade columns intact** and mapping roster attributes.
 3. **Dataset Documentation & Processing Audit Log**: Automatically generating and maintaining dataset `README.md` documentation in each course directory with raw input file injection timestamps and pipeline run history.
-4. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC learning outcomes and automatically generating direct formatted Excel workbooks (`assessment_report.xlsx`), summary CSVs (`assessment_summary.csv`), per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`), and Markdown reports (`assessment_report.md`).
+4. **Accreditation Assessment Reporting**: Evaluating targeted assignments against ABET / SACSCOC / general accreditation learning outcomes and automatically generating standardized Academic Year Excel workbooks (`[Course]-[Scope]-Individual Data-[LO].xlsx`) with FERPA-compliant `S1, S2, ...` anonymous IDs and live formulas, summary CSVs (`assessment_summary.csv`), per-student Pivot-Table-ready CSV datasets (`assessment_results.csv`), and Markdown reports (`assessment_report.md`).
 
 ---
 
-## Flexible Reporting Options: Direct Excel vs. Manual Pivot Table
+## Flexible Reporting Options: Standardized Academic Year Excel vs. Custom Pivot Table
 
 Faculty and department coordinators can choose between two flexible reporting methods:
 
-- **Method A: Direct Excel Report (`assessment_report.xlsx`) — Instant & Pre-Formatted**
-  Simply open `assessment_report.xlsx` generated automatically by the tool. It includes styled Executive Summary cards, outcome totals, and per-student tables ready for instant department review out-of-the-box.
+- **Method A: Standardized Academic Year Excel Report (`[Course]-[Scope]-Individual Data-[LO].xlsx`) — Instant & Department-Ready**
+  Automatically generates the official annual reporting workbook formatted for university accreditation. Includes section instructor attribution (from `<term>-sections.txt`), anonymous student IDs (`S1, S2, ...`), Fall and Spring 2-semester comparison blocks, and live dynamic Excel formulas (`COUNTIF`, `SUM`, pass percentages, and MET/NOT MET status).
 
 - **Method B: Custom Pivot Table from CSV (`assessment_results.csv`) — Manual Flexibility**
-  If you prefer custom spreadsheet analysis in **Microsoft Excel** or **Google Sheets**, open `assessment_results.csv` and create custom interactive Pivot Tables using the built-in numeric helper fields (`Pass Count` and `Total Student Count`).
+  If you prefer custom spreadsheet analysis in **Microsoft Excel** or **Google Sheets**, open `assessment_results.csv` (which retains real student identifiers and section attributes) and create custom interactive Pivot Tables using the built-in numeric helper fields (`Pass Count` and `Total Student Count`).
 
 👉 **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step Pivot Table instructions.
 
@@ -59,23 +59,28 @@ uv run semester-processor run-all copxxxx-26spring
 
 ## Step-by-Step User Guide: How to Prepare Your Files & Run the Tool
 
-### Step 1: Create a Dedicated Course Semester Directory
-Create a directory named after your course and semester in your workspace. 
+### Step 1: Create a Dedicated Course Academic Year Directory
+Create a directory named after your course and academic year (e.g. `25-26`) or semester offering. 
 
-*Example Directory Name*: `copxxxx-26spring` (COP XXXX Course Title - Spring 2026)
+*Example Directory Name*: `cop4020-25-26` (COP 4020 Course Title - Academic Year 2025-2026)
 
 ```bash
-mkdir copxxxx-26spring
+mkdir cop4020-25-26
 ```
 
 ---
 
 ### Step 2: Create a `raw/` Subdirectory & Copy Input Files
-Inside your course directory (`copxxxx-26spring`), create a subdirectory named **`raw/`**. 
+Inside your course directory (`cop4020-25-26`), create a subdirectory named **`raw/`**. 
 
-Copy all raw input files exported from Banner/MyUWF and Canvas into `copxxxx-26spring/raw/`:
-- **Raw Roster CSVs**: Official university section rosters (e.g. `CourseRoster_202601_16197.csv`, `CourseRoster_202601_17089.csv`). The section CRN (`16197`, `17089`) is automatically extracted from the filename.
-- **Raw Canvas Gradebook CSVs**: All instructors’ gradebook exports from Canvas (e.g. `2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv`).
+Copy all raw input files exported from Banner/MyUWF and Canvas into `cop4020-25-26/raw/`:
+- **Raw Roster CSVs**: Official university section rosters (e.g. `CourseRoster_202601_16197.csv`, `CourseRoster_202601_17089.csv`). The 6-digit term code (`202601`) and section CRN (`16197`, `17089`) are automatically extracted from the filename.
+- **Section Instructor Text Files**: Plain text mapping file named `<term>-sections.txt` (e.g., `202601-sections.txt` or `202508-sections.txt`). Lists instructors and their section CRNs line-by-line:
+  ```
+  Fang 16197 17089
+  Zhang 18451 18626
+  ```
+- **Raw Canvas Gradebook CSVs**: All instructors’ gradebook exports from Canvas (e.g. `2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv`).
 
 > ⚠️ **Important Data Rule**: Never modify or rename raw input files inside `raw/`. The tool reads raw data pristine and generates processed output files directly in the root of the course directory.
 
@@ -90,53 +95,47 @@ Each student's percentage uses points possible from that student's source export
 Use matching assignment titles across instructors for automatic alignment. `assignment_column` can select an exact cleaned title; an ambiguous query with multiple scored matches raises an error. Missing or invalid points possible for numeric scores raises an error rather than assuming 100 points. Re-run `run-all` after adding rosters; `extract-assessments` refreshes gradebooks whenever raw exports are available.
 
 ### Step 3: Create the Assessment Plan (`assessment_plan.json`)
-Create a file named **`assessment_plan.json`** directly inside `copxxxx-26spring/` (or place it in `copxxxx-26spring/raw/`).
+Create a file named **`assessment_plan.json`** directly inside `cop4020-25-26/` (or place it in `cop4020-25-26/raw/`).
 
-This JSON file defines which assignment to assess, passing thresholds, target pass rates, and evaluated majors. It supports **single or multiple learning outcomes / performance indicators**:
+This JSON file defines the academic year evaluation rules, passing thresholds, target pass rates, and evaluated majors. It supports **single or multiple learning outcomes / performance indicators** across any accreditation framework:
 
 ```json
 {
-  "course_name": "COP XXXX - Course Title",
-  "semester": "Spring 2026",
+  "course_name": "COP 4020 - Programming Languages",
+  "academic_year": "25-26",
+  "target_majors": ["Computer Science"],
   "assessments": [
     {
       "accreditation_type": "ABET",
-      "code": "LO.PI 1.1",
+      "code": "LO6.PI3",
       "assessment_name": "Project 1",
+      "assignment_column": "Project 1",
       "target_majors": ["Computer Science"],
       "passing_operator": ">=",
       "passing_threshold_percent": 70.0,
-      "target_pass_rate_percent": 75.0,
-      "notes": "ABET outcome assessment based on Project 1 for CS majors."
-    },
-    {
-      "accreditation_type": "ABET",
-      "code": "LO.PI 1.2",
-      "assessment_name": "Project 2",
-      "target_majors": ["Cybersecurity"],
-      "passing_operator": ">=",
-      "passing_threshold_percent": 70.0,
-      "target_pass_rate_percent": 75.0,
-      "notes": "ABET outcome assessment based on Project 2 for Cybersecurity majors."
+      "target_pass_rate_percent": 70.0,
+      "notes": "Design and implement a parser for a given grammar."
     }
   ]
 }
 ```
 
-The example evaluates Project 1 for Computer Science and Project 2 for Cybersecurity in one combined Markdown/Excel report. Each outcome retains its own population, denominator, target, and section totals. Repeat an assignment in separate items to report different majors independently. No pooled pass rate is calculated across unrelated outcomes.
+The example evaluates Project 1 for Computer Science across the academic year. Each outcome retains its own population, denominator, target, and section totals. Repeat an assignment in separate items to report different majors independently. No pooled pass rate is calculated across unrelated outcomes.
 
-Detailed CSV/Excel rows retain all active students for audit. `Target Major` identifies the item's scope and `Included in Assessment` indicates whether a row contributes to its summary. Sum the count columns to reproduce the summary; do not count all detail rows. A target population with no active students is reported as `NO DATA`. Missing scores among included active students continue to count as failures.
+Detailed CSV rows retain all active students for audit. `Target Major` identifies the item's scope and `Included in Assessment` indicates whether a row contributes to its summary. Sum the count columns to reproduce the summary; do not count all detail rows. A target population with no active students is reported as `NO DATA`. Missing scores among included active students continue to count as failures.
 
 #### Field Explanations:
 - `course_name`: Official title of the course.
-- `semester`: Term and year (e.g., `Spring 2026`).
-- `target_majors`: Set this list **inside each assessment item** to select its programs (full names or abbreviations such as `CS` and `Cyber`, case-insensitive). `[]` explicitly selects all active majors. An omitted item field inherits the optional top-level `target_majors`, preserving old plans; if neither is set, all active majors are evaluated. Invalid values such as a string or `null` raise an error.
-- `accreditation_type`: `ABET` or `SACSCOC`.
-- `code`: Learning outcome / performance indicator ID (e.g. `"LO.PI 1.1"`).
-- `assessment_name`: Name/title of the assessed assignment (e.g. `"Project 1"`). Merges assignment query and assessment name into a single clean attribute. Multi-stage fuzzy matching aligns headers automatically without third-party dependencies!
+- `academic_year`: Two-semester academic year (e.g. `"25-26"` or `"2025-2026"`). Maps to Fall (`202508`) and Spring (`202601`).
+- `target_majors`: Set this list at the top level or inside each assessment item to select programs (full names or abbreviations such as `CS` and `Cyber`, case-insensitive). `[]` selects all active majors.
+- `accreditation_type`: `ABET`, `SACSCOC`, or any accreditation framework name.
+- `code`: Learning outcome / performance indicator ID (e.g. `"LO6.PI3"`).
+- `assessment_name`: Name/title of the assessed assignment (e.g. `"Project 1"`).
+- `assignment_column`: Assignment query matched against Canvas gradebook columns via fuzzy matching.
 - `passing_operator`: Operator for passing rule (`>=`, `>`, `<=`, `<`, `==`).
 - `passing_threshold_percent`: Minimum percentage score to pass (e.g. `70.0`).
-- `target_pass_rate_percent`: Department target pass rate benchmark (e.g. `75.0`).
+- `target_pass_rate_percent`: Department target pass rate benchmark (e.g. `70.0`).
+- `notes`: Description or outcome explanation copied into the Excel report.
 
 ---
 
@@ -160,31 +159,33 @@ uv run semester-processor run-all copxxxx-26spring
 Your course directory only contains raw input files inside `raw/` and your `assessment_plan.json`:
 
 ```
-copxxxx-26spring/
+cop4020-25-26/
 ├── raw/
 │   ├── CourseRoster_202601_16197.csv
 │   ├── CourseRoster_202601_17089.csv
-│   └── 2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv
+│   ├── 202601-sections.txt
+│   └── 2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv
 └── assessment_plan.json
 ```
 
 ---
 
 ### AFTER Running the Tool
-The tool reorganizes the course directory, preserving raw files intact while generating processed output files directly in the root of `copxxxx-26spring/`:
+The tool processes the course directory, preserving raw files intact while generating processed output files directly in the root of `cop4020-25-26/`:
 
 ```
-copxxxx-26spring/
+cop4020-25-26/
 ├── raw/                                           # RAW DATA PRESERVED UNTOUCHED
 │   ├── CourseRoster_202601_16197.csv
 │   ├── CourseRoster_202601_17089.csv
-│   └── 2026-09-02T1237_Grades-Course_Title_-_16197_COPXXXX_202601.csv
+│   ├── 202601-sections.txt
+│   └── 2026-09-02T1237_Grades-Programming_Languages_-_16197_COP4020_202601.csv
 ├── assessment_plan.json                            # Accreditation configuration plan
-├── combined_roster.csv                             # GENERATED: Merged multi-section roster
+├── combined_roster.csv                             # GENERATED: Merged multi-section roster with Anonymous IDs
 ├── merged_gradebook.csv                            # GENERATED: Consolidated gradebook + roster attributes
 ├── assessment_results.csv                          # GENERATED: Detailed per-student assessment CSV (Pivot Table ready)
 ├── assessment_summary.csv                          # GENERATED: Aggregated outcome summary CSV (Pass metrics only)
-├── assessment_report.xlsx                          # GENERATED: Formatted multi-tab Excel workbook
+├── COP4020-CS-ONLY-Individual Data-LO6PI3.xlsx      # GENERATED: Standardized Academic Year Excel workbook
 ├── assessment_report.md                            # GENERATED: Formatted Markdown report
 └── README.md                                       # GENERATED: Dataset overview & Processing Audit Log
 ```
@@ -196,17 +197,19 @@ copxxxx-26spring/
 1. **`combined_roster.csv`**:
    - Merges all section rosters found in `raw/`.
    - Extracts 5-digit section CRNs (`16197`, `17089`).
+   - Assigns section-relative anonymous IDs (`S1, S2, ...`) for active students (FERPA compliant).
+   - Maps instructor names from `<term>-sections.txt`.
    - Normalizes student programs (`Computer Science` $\rightarrow$ `CS`, `Software Design` $\rightarrow$ `SD`, `Cybersecurity` $\rightarrow$ `Cyber`, etc.).
    - Computes student status (`Active` vs. `Withdrawn`).
 
 2. **`merged_gradebook.csv`**:
    - Combines all Canvas gradebook CSVs with `combined_roster.csv`.
    - Preserves **100% of Canvas grade columns intact**.
-   - Attaches `Section Number`, `Major`, `Status`, `Level`, and `Cohort` columns to each student row.
+   - Carries forward `Anonymous ID`, `Instructor`, `Section Number`, `Major`, `Status`, `Level`, and `Cohort` columns.
    - Dynamic row parser automatically detects `Points Possible` rows and handles presence/absence of `"Manual Posting"` rows without skipping student data.
 
 3. **`assessment_results.csv`**:
-   - Detailed per-student dataset listing every student's Program, Name, Section ID, Assessed Assignment, Assessed Score, and Pass/Fail Status.
+   - Detailed per-student dataset listing every student's Program, Name, Anonymous ID, Instructor, Section ID, Assessed Assignment, Assessed Score, and Pass/Fail Status.
    - Includes helper count columns (`Pass Count` = 1/0 and `Total Student Count` = 1 for included students; both are zero outside the item’s target majors) for instant **Excel / Google Sheets Pivot Tables**.
    - See the **[Pivot Table Reporting Guide](PIVOT_TABLE_GUIDE.md)** for step-by-step instructions.
 
@@ -215,14 +218,16 @@ copxxxx-26spring/
    - Summarizes `Passed Count`, `Total Evaluated`, `Pass Rate (%)`, and `Outcome Status` (`MET` / `NOT MET`) per section and total across all sections.
    - Excludes all `Fail` columns for clean, focused outcome reporting.
 
-5. **`assessment_report.xlsx`**:
-   - Multi-tab Excel workbook containing:
-     - **Tab 1 (`Assessment Summary & Plan`)**: Assessment plan configuration details, followed by a simplified assessment outcome summary (Code, Assessment Name, Assessed Assignment, Passed Count, Total Evaluated, Pass Ratio, Pass Rate %, MET/NOT MET status).
-     - **Tab 2 (`Student Assessment Results`)**: Complete per-student evaluation table with custom header styling and auto-adjusted column widths.
+5. **`[Course]-[Scope]-Individual Data-[LO].xlsx`**:
+   - Standardized Academic Year Assessment Excel report matching official institutional templates.
+   - Anonymizes students using `S1, S2, ...` per section.
+   - Side-by-side section tables for Fall (Rows 3–28) and Spring (Rows 32–45).
+   - Live dynamic Excel formulas for section pass totals (`=COUNTIF(...)`), valid submissions (`=SUM(COUNTIF(...), COUNTIF(...))`), Semester Totals, Grand Totals, Pass Percentage (`=IF(D>0, ROUND(C/D*100, 0), 0)`), and Met PI check (`=IF(C>=70, "Y", "N")`).
+   - Learning outcome description and evaluation criteria at the bottom.
 
 6. **`assessment_report.md`**:
    - Professional Markdown assessment report containing:
-     - Executive summary & total roster enrollment breakdown by major and section.
+     - Executive summary, Academic Year, active term offering, & total roster enrollment breakdown by major and section.
      - Outcome pass/fail ratios and percentages per section and total sum across all sections.
      - Complete student outcome result tables.
 

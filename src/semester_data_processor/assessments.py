@@ -97,14 +97,16 @@ def load_or_create_plan(course_dir: str) -> dict:
         with open(target_path, mode="r", encoding="utf-8") as f:
             return json.load(f)
 
+    term_info = resolve_course_and_academic_year(course_dir, {})
     default_plan = {
-        "course_name": "COP XXXX - Sample Course",
-        "semester": "Spring 2026",
+        "course_name": f"{term_info['course_code']} - Course Title",
+        "academic_year": term_info.get("academic_year_label", "2025-26"),
         "assessments": [
             {
                 "accreditation_type": "ABET",
-                "code": "LO.PI 1.1",
+                "code": "LO1.PI1",
                 "assessment_name": "Project 1",
+                "assignment_column": "Project 1",
                 "target_majors": ["Computer Science"],
                 "passing_operator": ">=",
                 "passing_threshold_percent": 70.0,
@@ -500,11 +502,18 @@ def extract_assessments(course_dir: str) -> str:
     acc_types_set = sorted(list(set(cfg.get("accreditation_type", "ABET").upper() for cfg in assessments_config))) if assessments_config else ["ABET"]
     acc_types_str = " / ".join(acc_types_set)
 
+    term_info = resolve_course_and_academic_year(course_dir, plan)
+
     with open(report_output_path, mode="w", encoding="utf-8") as f:
         f.write(f"# {acc_types_str} Assessment Report - {os.path.basename(course_dir)}\n\n")
         f.write("## Executive Summary\n\n")
         f.write(f"- **Course**: {plan.get('course_name', course_dir)}\n")
-        f.write(f"- **Semester**: {plan.get('semester', '')}\n")
+        f.write(f"- **Academic Year**: {term_info['academic_year_label']}\n")
+        if plan.get("semester"):
+            f.write(f"- **Semester**: {plan.get('semester')}\n")
+        else:
+            active_sem_name = "Fall" if term_info["is_fall"] else "Spring"
+            f.write(f"- **Active Term**: {active_sem_name} ({term_info['active_term']})\n")
         f.write(f"- **Total Roster Registrations**: {total_enrolled} ({len(active_students)} Active, {len(withdrawn_students)} Withdrawn)\n")
         f.write(f"- **Target Major Evaluated**: {plan_scope}\n")
         f.write(f"- **Total Learning Outcomes / Performance Indicators Assessed**: {len(assessments_config)}\n\n")
@@ -685,6 +694,14 @@ def resolve_course_and_academic_year(course_dir: str, plan: dict) -> dict:
             spring_term = f"{y2}01"
 
     if not fall_term or not spring_term:
+        m_dir_ay = re.search(r'(\d{2,4})\s*[-/]\s*(\d{2,4})', dir_name)
+        if m_dir_ay:
+            y1 = int(m_dir_ay.group(1)) if len(m_dir_ay.group(1)) == 4 else 2000 + int(m_dir_ay.group(1))
+            y2 = int(m_dir_ay.group(2)) if len(m_dir_ay.group(2)) == 4 else 2000 + int(m_dir_ay.group(2))
+            fall_term = f"{y1}08"
+            spring_term = f"{y2}01"
+
+    if not fall_term or not spring_term:
         if active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08")):
             y = int(active_term[:4])
             fall_term = f"{y}08"
@@ -694,7 +711,7 @@ def resolve_course_and_academic_year(course_dir: str, plan: dict) -> dict:
             fall_term = f"{y - 1}08"
             spring_term = f"{y}01"
 
-    is_fall = active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08"))
+    is_fall = bool(active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08")))
     is_spring = not is_fall
 
     return {
