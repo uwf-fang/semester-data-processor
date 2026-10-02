@@ -15,6 +15,7 @@ import difflib
 import math
 from collections import defaultdict
 from .gradebook import process_gradebook, discover_gradebooks, read_gradebooks
+from .rosters import load_instructor_mapping
 from .readme import generate_output_readme
 
 
@@ -204,6 +205,8 @@ def extract_assessments(course_dir: str) -> str:
     active_students = [s for s in student_records if s.get("Status", "Active").strip().lower() in ("", "active")]
     withdrawn_students = [s for s in student_records if s.get("Status", "").strip().lower() == "withdrawn"]
 
+    instructor_map = load_instructor_mapping(course_dir)
+
     per_student_export_rows = []
     report_assessment_results = []
 
@@ -243,6 +246,27 @@ def extract_assessments(course_dir: str) -> str:
         matched_col_display = ", ".join(clean_matched) if len(clean_matched) > 1 else clean_matched[0]
         pts_possible = None
 
+        # Pre-assign section-relative Anonymous IDs (S1, S2, ...) for evaluated students
+        eval_candidates = []
+        for s in active_students:
+            prog_full = s.get("Major", s.get("Program", "Unknown"))
+            prog_abbr = get_program_abbr(prog_full)
+            included = not target_majors_lower or prog_full.strip().lower() in target_majors_lower or prog_abbr.lower() in target_majors_lower
+            if included:
+                eval_candidates.append(s)
+
+        sec_eval_map = defaultdict(list)
+        for s in eval_candidates:
+            sec_num = s.get("Section Number", s.get("Section", "Unknown"))
+            sec_eval_map[sec_num].append(s)
+
+        sec_anon_map = {}
+        for sec_num, s_list in sec_eval_map.items():
+            s_list.sort(key=lambda s: (s.get("Last Name", "").lower(), s.get("First Name", "").lower()))
+            for idx, s in enumerate(s_list, 1):
+                sid = s.get("SIS User ID", s.get("UWFID", ""))
+                sec_anon_map[(sec_num, sid)] = f"S{idx}"
+
         per_student_rows = []
         for s in active_students:
             fn = s.get("First Name", "")
@@ -258,6 +282,9 @@ def extract_assessments(course_dir: str) -> str:
             prog_full = s.get("Major", s.get("Program", "Unknown"))
             prog_abbr = get_program_abbr(prog_full)
             sec_num = s.get("Section Number", s.get("Section", "Unknown"))
+            instructor_name = instructor_map.get(sec_num, s.get("Instructor", ""))
+            sid = s.get("SIS User ID", s.get("UWFID", ""))
+            anon_id = sec_anon_map.get((sec_num, sid), "")
 
             included = not target_majors_lower or prog_full.strip().lower() in target_majors_lower or prog_abbr.lower() in target_majors_lower
             score_val = None
@@ -298,6 +325,8 @@ def extract_assessments(course_dir: str) -> str:
             pass_criterion_str = f"{op} {pass_threshold:g}%"
 
             row_dict = {
+                "Anonymous ID": anon_id,
+                "Instructor": instructor_name,
                 "Target Major": target_major,
                 "Included in Assessment": "Yes" if included else "No",
                 "Accreditation": accreditation_type,
@@ -318,6 +347,8 @@ def extract_assessments(course_dir: str) -> str:
             }
             per_student_rows.append({
                 **row_dict,
+                "Anonymous ID": anon_id,
+                "Instructor": instructor_name,
                 "score_val": score_val,
                 "pct": pct,
                 "is_pass": is_pass,
@@ -388,7 +419,7 @@ def extract_assessments(course_dir: str) -> str:
 
     # Detailed Per-Student assessment_results.csv
     results_csv_output_path = os.path.join(course_dir, "assessment_results.csv")
-    headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Target Major", "Included in Assessment"]
+    headers = ["Anonymous ID", "Instructor", "Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Target Major", "Included in Assessment"]
     with open(results_csv_output_path, mode="w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
@@ -555,15 +586,12 @@ def extract_assessments(course_dir: str) -> str:
 
     print(f"Generated assessment Markdown report: {report_output_path}")
 
-    # Direct Excel Workbook Generation: assessment_report.xlsx
-    excel_output_path = export_excel_report(
+    # Generate Academic Year Assessment Excel Reports (new format)
+    generated_excel_paths = export_academic_year_excel_report(
         course_dir=course_dir,
         plan=plan,
         report_assessment_results=report_assessment_results,
-        per_student_export_rows=per_student_export_rows,
-        total_enrolled=total_enrolled,
-        active_count=len(active_students),
-        withdrawn_count=len(withdrawn_students)
+        instructor_map=instructor_map
     )
 
     generate_output_readme(course_dir, action_name="Extract Assessments")
@@ -571,215 +599,373 @@ def extract_assessments(course_dir: str) -> str:
     return report_output_path
 
 
-def export_excel_report(course_dir: str, plan: dict, report_assessment_results: list, per_student_export_rows: list, total_enrolled: int, active_count: int, withdrawn_count: int) -> str:
-    """Generates formatted Excel workbook (assessment_report.xlsx) with Plan details, simplified summary, and student results."""
+def export_academic_year_excel_report(course_dir: str, plan: dict, report_assessment_results: list, instructor_map: dict = None) -> list:
+    """
+    Generates standardized Academic Year Assessment Excel Workbooks (e.g. COP4020-CS-ONLY-Individual Data-LO2PI3.xlsx).
+    Conforms to the 2-semester academic year format with side-by-side section columns,
+    anonymous student IDs (S1, S2, ...), live formulas for counts/percentages, and outcome metadata.
+    """
     try:
         import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, Alignment
         from openpyxl.utils import get_column_letter
     except ImportError:
         print("Warning: 'openpyxl' module not found. Skipping .xlsx Excel report generation. Install via 'pip install openpyxl' or run with 'uv run'.")
-        return ""
+        return []
 
-    wb = openpyxl.Workbook()
+    if instructor_map is None:
+        instructor_map = load_instructor_mapping(course_dir)
 
-    # Sheet 1: Assessment Summary & Plan
-    ws_summary = wb.active
-    ws_summary.title = "Assessment Summary & Plan"
-    ws_summary.views.sheetView[0].showGridLines = True
+    generated_paths = []
+    course_name = plan.get("course_name", os.path.basename(course_dir))
+    m = re.search(r'([A-Za-z]{3}\s*\d{4})', course_name)
+    course_code = m.group(1).replace(" ", "").upper() if m else os.path.basename(course_dir).upper()
 
-    title_font = Font(name="Calibri", size=14, bold=True, color="1F4E79")
-    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-    section_font = Font(name="Calibri", size=12, bold=True, color="1F4E79")
-    sub_font = Font(name="Calibri", size=11, bold=True, color="333333")
-    regular_font = Font(name="Calibri", size=11)
+    # Determine term codes and academic year
+    semester_raw = str(plan.get("semester", ""))
+    term_code = str(plan.get("term_code", ""))
+    if not term_code:
+        m_term = re.search(r'(20\d{2}(?:08|01|05))', course_dir)
+        if m_term:
+            term_code = m_term.group(1)
+        else:
+            raw_dir = os.path.join(course_dir, "raw")
+            if os.path.exists(raw_dir):
+                for f in os.listdir(raw_dir):
+                    m_f = re.search(r'CourseRoster_(20\d{2}(?:08|01|05))', f)
+                    if m_f:
+                        term_code = m_f.group(1)
+                        break
 
-    met_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-    met_font = Font(name="Calibri", size=11, bold=True, color="375623")
-    not_met_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-    not_met_font = Font(name="Calibri", size=11, bold=True, color="C65911")
+    if not term_code:
+        m_year = re.search(r'(20\d{2})', semester_raw)
+        year = m_year.group(1) if m_year else "2026"
+        if "fall" in semester_raw.lower():
+            term_code = f"{year}08"
+        elif "spring" in semester_raw.lower():
+            term_code = f"{year}01"
+        else:
+            term_code = f"{year}01"
 
-    thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
-    )
+    is_spring = term_code.endswith("01") or "spring" in semester_raw.lower()
+    year_int = int(term_code[:4]) if len(term_code) >= 4 and term_code[:4].isdigit() else 2026
+    if is_spring:
+        spring_term = term_code if len(term_code) == 6 else f"{year_int}01"
+        fall_term = f"{year_int - 1}08"
+    else:
+        fall_term = term_code if len(term_code) == 6 else f"{year_int}08"
+        spring_term = f"{year_int + 1}01"
 
-    row_idx = 1
-    ws_summary.cell(row=row_idx, column=1, value=f"{plan.get('course_name', os.path.basename(course_dir))} — Assessment Executive Summary").font = title_font
-    row_idx += 1
-    ws_summary.cell(row=row_idx, column=1, value=f"Semester: {plan.get('semester', '')} | Evaluated Major: Per-assessment majors (see plan below) | Active Students: {active_count}").font = regular_font
-    row_idx += 2
+    title_text = f"{course_code} Assessment results {fall_term} and {spring_term}"
 
-    # Section 1: Assessment Plan Details
-    ws_summary.cell(row=row_idx, column=1, value="1. Assessment Plan Details").font = section_font
-    row_idx += 1
-
-    plan_headers = ["Code", "Accreditation", "Assessed Assignment", "Passing Criterion", "Target Benchmark", "Notes", "Target Major"]
-    for col_idx, h in enumerate(plan_headers, 1):
-        cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-    row_idx += 1
-
-    assessments_config = plan.get("assessments", [])
-    for item in assessments_config:
-        code_val = item.get("code", item.get("lo_pi_code", ""))
-        acc_val = item.get("accreditation_type", "ABET").upper()
-        raw_name = item.get("assessment_name") or item.get("assignment_name") or item.get("assignment_column", "")
-        clean_name = re.sub(r'^\[?LO\.?PI\s*[\d\.]+\]?\s*[-:]?\s*', '', raw_name, flags=re.IGNORECASE).strip()
-        ass_name_val = clean_name if clean_name else raw_name
-
-        crit_val = f"{item.get('passing_operator', '>=')} {item.get('passing_threshold_percent', 70):g}%"
-        bm_val = f"{item.get('target_pass_rate_percent', 75):g}% Pass Rate"
-        notes_val = item.get("notes", "")
-
-        row_vals = [code_val, acc_val, ass_name_val, crit_val, bm_val, notes_val, major_label(assessment_majors(plan, item))]
-        for col_idx, val in enumerate(row_vals, 1):
-            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = regular_font
-            cell.border = thin_border
-            if col_idx in [1, 2, 4, 5]:
-                cell.alignment = Alignment(horizontal="center")
-        row_idx += 1
-
-    row_idx += 2
-
-    # Section 2: Assessment Summary (Simplified Title & Non-Redundant Columns)
-    ws_summary.cell(row=row_idx, column=1, value="2. Assessment Summary").font = section_font
-    row_idx += 1
-
-    sum_headers = ["Code", "Assessed Assignment", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Outcome Status", "Target Major"]
-    for col_idx, h in enumerate(sum_headers, 1):
-        cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-    row_idx += 1
+    font_base = Font(name="Arial", size=10)
+    font_bold = Font(name="Arial", size=10, bold=True)
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
 
     for res in report_assessment_results:
         cfg = res["cfg"]
-        code_val = res.get("code", "")
-        matched_col = res.get("matched_col", "")
-        tot_pass = res.get("tot_pass", 0)
-        tot_eval = res.get("tot_eval", 0)
-        ratio_str = f"{tot_pass}/{tot_eval}"
-        pct_str = f"{res.get('total_pct', 0.0)}%"
-        status_str = res.get("overall_status", "MET")
+        acc_type = cfg.get("accreditation_type", "ABET").upper()
+        sheet_title = f"{acc_type} Assessment" if acc_type else "Assessment"
+        code = str(res.get("code", "")).strip()
 
-        row_vals = [code_val, matched_col, tot_pass, tot_eval, ratio_str, pct_str, status_str, res["target_major"]]
-        for col_idx, val in enumerate(row_vals, 1):
-            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = regular_font
-            cell.border = thin_border
-            if col_idx in [1, 3, 4, 5, 6]:
-                cell.alignment = Alignment(horizontal="center")
-            if col_idx == 7:
-                cell.alignment = Alignment(horizontal="center")
-                if status_str == "MET":
-                    cell.fill = met_fill
-                    cell.font = met_font
-                else:
-                    cell.fill = not_met_fill
-                    cell.font = not_met_font
-        row_idx += 1
+        # Sanitize code for filename: e.g. LO2.PI3 -> LO2PI3, LO.PI 1.1 -> LO1PI1
+        filename_code = re.sub(r'[^A-Za-z0-9]', '', code) or "LO"
 
-    row_idx += 2
+        # Display code: e.g. LO2-3, LO1-1
+        nums = re.findall(r'\d+', code)
+        if len(nums) >= 2:
+            display_code = f"LO{nums[0]}-{nums[1]}"
+        else:
+            display_code = code
 
-    # Section 3: Vertical Outcome Breakdown Cards
-    ws_summary.cell(row=row_idx, column=1, value="3. Section Outcome Breakdown Cards").font = section_font
-    row_idx += 1
+        # Major scope label: e.g. CS-ONLY, ALL-MAJORS
+        target_majors = assessment_majors(plan, cfg)
+        if not target_majors:
+            major_scope = "ALL-MAJORS"
+        elif len(target_majors) == 1:
+            major_abbr = get_program_abbr(target_majors[0]).upper()
+            major_scope = f"{major_abbr}-ONLY"
+        else:
+            abbrs = "-".join(get_program_abbr(m).upper() for m in target_majors)
+            major_scope = abbrs
 
-    for res in report_assessment_results:
-        code_val = res.get("code", "")
-        matched_col = res.get("matched_col", "")
+        filename = f"{course_code}-{major_scope}-Individual Data-{filename_code}.xlsx"
+        output_xlsx_path = os.path.join(course_dir, filename)
 
-        ws_summary.cell(row=row_idx, column=1, value=f"Outcome Card: {code_val} ({matched_col}) — {res['target_major']}").font = sub_font
-        row_idx += 1
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = sheet_title
+        ws.views.sheetView[0].showGridLines = True
 
-        card_headers = ["Section ID", "Passed Count", "Total Evaluated", "Pass Ratio", "Pass Rate (%)", "Status"]
-        for col_idx, h in enumerate(card_headers, 1):
-            cell = ws_summary.cell(row=row_idx, column=col_idx, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-        row_idx += 1
+        # Group evaluated students by section
+        eval_students = res.get("eval_students", [])
+        sec_group = defaultdict(list)
+        for r in eval_students:
+            sec_group[str(r["section_id"])].append(r)
 
-        target_rate = float(res["cfg"].get("target_pass_rate_percent", 75.0))
-        for sr in res["sec_summary_rows"]:
-            s_pct_val = sr["pass_count"] / sr["total_count"] * 100.0
-            s_status = "MET" if s_pct_val >= target_rate else "NOT MET"
-            row_vals = [sr["section_id"], sr["pass_count"], sr["total_count"], sr["pass_ratio"], sr["pass_percent"], s_status]
-            for col_idx, val in enumerate(row_vals, 1):
-                cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
-                cell.font = regular_font
-                cell.border = thin_border
-                if col_idx in [1, 2, 3, 4, 5]:
-                    cell.alignment = Alignment(horizontal="center")
-                if col_idx == 6:
-                    cell.alignment = Alignment(horizontal="center")
-                    cell.fill = met_fill if s_status == "MET" else not_met_fill
-                    cell.font = met_font if s_status == "MET" else not_met_font
-            row_idx += 1
+        # Sort sections by CRN
+        sections = sorted(list(sec_group.keys()))
+        if not sections:
+            sections = ["Unknown"]
 
-        tot_vals = ["Total (All Sections)", res["tot_pass"], res["tot_eval"], res["total_ratio"], f"{res['total_pct']}%", res["overall_status"]]
-        for col_idx, val in enumerate(tot_vals, 1):
-            cell = ws_summary.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = Font(name="Calibri", size=11, bold=True)
-            cell.border = thin_border
-            if col_idx in [1, 2, 3, 4, 5]:
-                cell.alignment = Alignment(horizontal="center")
-            if col_idx == 6:
-                cell.alignment = Alignment(horizontal="center")
-                cell.fill = met_fill if res["overall_status"] == "MET" else not_met_fill
-                cell.font = met_font if res["overall_status"] == "MET" else not_met_font
-        row_idx += 2
+        # Map each section to its column indices
+        # Section 0: Student=Col A (1), Score=Col C (3), Total=Col D (4)
+        # Section 1: Student=Col G (7), Score=Col H (8), Total=Col I (9)
+        # Section k (k >= 2): Student = 7 + (k-1)*3, Score = Student + 1, Total = Student + 2
+        sec_cols = {}
+        for idx, sec_id in enumerate(sections):
+            if idx == 0:
+                c_std, c_scr, c_tot = 1, 3, 4
+            elif idx == 1:
+                c_std, c_scr, c_tot = 7, 8, 9
+            else:
+                c_std = 7 + (idx - 1) * 3
+                c_scr = c_std + 1
+                c_tot = c_std + 2
+            sec_cols[sec_id] = {
+                "std": c_std,
+                "score": c_scr,
+                "total": c_tot
+            }
 
-    # Auto-adjust column widths
-    for col in ws_summary.columns:
-        max_len = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            val_str = str(cell.value or '')
-            max_len = max(max_len, len(val_str))
-        ws_summary.column_dimensions[col_letter].width = max(max_len + 4, 12)
+        max_used_col = max(max(c["total"] for c in sec_cols.values()), 17)
 
-    # Sheet 2: Student Assessment Results
-    ws_results = wb.create_sheet(title="Student Assessment Results")
-    ws_results.views.sheetView[0].showGridLines = True
+        # Row 1: Merged Banner title
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_used_col)
+        cell_a1 = ws.cell(1, 1, value=title_text)
+        cell_a1.font = font_bold
+        cell_a1.alignment = align_center
 
-    if per_student_export_rows:
-        res_headers = ["Program", "First Name", "Last Name", "Section ID", "Assessed Score", "Points Possible", "Score Percentage (%)", "Passing Criterion", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code", "Assessment Name", "Full Major", "Target Major", "Included in Assessment"]
-        for col_idx, h in enumerate(res_headers, 1):
-            cell = ws_results.cell(row=1, column=col_idx, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+        max_active_students = max((len(sec_group[s]) for s in sections), default=0)
+        num_student_rows = max(max_active_students, 11)
 
-        for r_idx, r in enumerate(per_student_export_rows, 2):
-            for c_idx, h in enumerate(res_headers, 1):
-                val = r.get(h, "")
-                cell = ws_results.cell(row=r_idx, column=c_idx, value=val)
-                cell.font = regular_font
-                cell.border = thin_border
-                if h in ["Program", "Section ID", "Pass/Fail Status", "Pass Count", "Total Student Count", "Accreditation", "Code"]:
-                    cell.alignment = Alignment(horizontal="center")
+        if is_spring:
+            # Fall Block: Unpopulated placeholder
+            ws.cell(5, 1, value=float(fall_term) if fall_term.isdigit() else fall_term).font = font_bold
+            for s_id, cols in sec_cols.items():
+                ws.cell(5, cols["score"], value=display_code).font = font_base
+                ws.cell(5, cols["score"]).alignment = align_center
+                ws.cell(6, cols["std"], value="Student").font = font_base
+                ws.cell(6, cols["std"]).alignment = align_center
+                if s_id == sections[0]:
+                    ws.cell(6, cols["score"], value="Y/N").font = font_base
+                    ws.cell(6, cols["score"]).alignment = align_center
 
-        for col in ws_results.columns:
-            max_len = 0
-            col_letter = get_column_letter(col[0].column)
-            for cell in col:
-                val_str = str(cell.value or '')
-                max_len = max(max_len, len(val_str))
-            ws_results.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            ws.cell(24, 1, value="Course total").font = font_base
+            ws.cell(24, 1).alignment = align_center
+            ws.cell(25, 1, value=f"Total {fall_term}").font = font_base
+            ws.cell(25, 1).alignment = align_center
 
-    output_path = os.path.join(course_dir, "assessment_report.xlsx")
-    wb.save(output_path)
-    print(f"Generated Excel assessment report workbook: {output_path}")
-    return output_path
+            for s_id, cols in sec_cols.items():
+                scr_col_letter = get_column_letter(cols["score"])
+                ws.cell(25, cols["score"], value=f'=countif({scr_col_letter}7:{scr_col_letter}23,"=Y")').font = font_base
+                ws.cell(25, cols["score"]).alignment = align_center
+                ws.cell(25, cols["total"], value=f'=sum(countif({scr_col_letter}7:{scr_col_letter}22,"Y"),countif({scr_col_letter}7:{scr_col_letter}22,"N"))').font = font_base
+                ws.cell(25, cols["total"]).alignment = align_center
+
+            fall_total_row = 25
+
+            # Spring Block: Starts at row 27
+            r_sp_inst = 27
+            r_sp_crn = 28
+            r_sp_lo = 29
+            r_sp_std_hdr = 30
+            r_sp_data_start = 31
+            r_sp_data_end = r_sp_data_start + num_student_rows - 1
+            r_sp_total = r_sp_data_end + 3
+
+            ws.cell(r_sp_inst, 16, value="Edit if professors or # of sections change").font = font_base
+            ws.cell(r_sp_lo, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
+            ws.cell(r_sp_total, 1, value=f"Total {spring_term}").font = font_bold
+            ws.cell(r_sp_total, 1).alignment = align_center
+
+            for s_id in sections:
+                cols = sec_cols[s_id]
+                inst_name = instructor_map.get(s_id, "")
+                ws.cell(r_sp_inst, cols["score"], value=inst_name).font = font_bold
+                ws.cell(r_sp_inst, cols["score"]).alignment = align_center
+
+                crn_val = float(s_id) if s_id.isdigit() else s_id
+                ws.cell(r_sp_crn, cols["score"], value=crn_val).font = font_base
+                ws.cell(r_sp_crn, cols["score"]).alignment = align_center
+
+                ws.cell(r_sp_lo, cols["score"], value=display_code).font = font_base
+                ws.cell(r_sp_lo, cols["score"]).alignment = align_center
+
+                ws.cell(r_sp_std_hdr, cols["std"], value="Student").font = font_base
+                ws.cell(r_sp_std_hdr, cols["std"]).alignment = align_center
+                if s_id == sections[0]:
+                    ws.cell(r_sp_std_hdr, cols["score"], value="Y/N").font = font_base
+                    ws.cell(r_sp_std_hdr, cols["score"]).alignment = align_center
+
+                # Populate student rows
+                s_list = sec_group[s_id]
+                scr_col_letter = get_column_letter(cols["score"])
+                for s_idx, st in enumerate(s_list):
+                    r_curr = r_sp_data_start + s_idx
+                    ws.cell(r_curr, cols["std"], value=st.get("Anonymous ID", f"S{s_idx+1}")).font = font_base
+                    ws.cell(r_curr, cols["std"]).alignment = align_center
+
+                    score_letter = "y" if st["is_pass"] else "n"
+                    ws.cell(r_curr, cols["score"], value=score_letter).font = font_base
+                    ws.cell(r_curr, cols["score"]).alignment = align_center
+
+                # Formulas for Spring Total
+                ws.cell(r_sp_total, cols["score"], value=f'=countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"=Y")').font = font_base
+                ws.cell(r_sp_total, cols["score"]).alignment = align_center
+                ws.cell(r_sp_total, cols["total"], value=f'=sum(countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"Y"),countif({scr_col_letter}{r_sp_data_start}:{scr_col_letter}{r_sp_data_end},"N"))').font = font_base
+                ws.cell(r_sp_total, cols["total"]).alignment = align_center
+
+            spring_total_row = r_sp_total
+
+        else:
+            # Fall Block: Active
+            r_fa_inst = 3
+            r_fa_crn = 4
+            r_fa_lo = 5
+            r_fa_std_hdr = 6
+            r_fa_data_start = 7
+            r_fa_data_end = r_fa_data_start + num_student_rows - 1
+            r_fa_total = r_fa_data_end + 2
+
+            ws.cell(r_fa_lo, 1, value=float(fall_term) if fall_term.isdigit() else fall_term).font = font_bold
+            ws.cell(r_fa_total - 1, 1, value="Course total").font = font_base
+            ws.cell(r_fa_total - 1, 1).alignment = align_center
+            ws.cell(r_fa_total, 1, value=f"Total {fall_term}").font = font_bold
+            ws.cell(r_fa_total, 1).alignment = align_center
+
+            for s_id in sections:
+                cols = sec_cols[s_id]
+                inst_name = instructor_map.get(s_id, "")
+                ws.cell(r_fa_inst, cols["score"], value=inst_name).font = font_bold
+                ws.cell(r_fa_inst, cols["score"]).alignment = align_center
+
+                crn_val = float(s_id) if s_id.isdigit() else s_id
+                ws.cell(r_fa_crn, cols["score"], value=crn_val).font = font_base
+                ws.cell(r_fa_crn, cols["score"]).alignment = align_center
+
+                ws.cell(r_fa_lo, cols["score"], value=display_code).font = font_base
+                ws.cell(r_fa_lo, cols["score"]).alignment = align_center
+
+                ws.cell(r_fa_std_hdr, cols["std"], value="Student").font = font_base
+                ws.cell(r_fa_std_hdr, cols["std"]).alignment = align_center
+                if s_id == sections[0]:
+                    ws.cell(r_fa_std_hdr, cols["score"], value="Y/N").font = font_base
+                    ws.cell(r_fa_std_hdr, cols["score"]).alignment = align_center
+
+                # Populate student rows
+                s_list = sec_group[s_id]
+                scr_col_letter = get_column_letter(cols["score"])
+                for s_idx, st in enumerate(s_list):
+                    r_curr = r_fa_data_start + s_idx
+                    ws.cell(r_curr, cols["std"], value=st.get("Anonymous ID", f"S{s_idx+1}")).font = font_base
+                    ws.cell(r_curr, cols["std"]).alignment = align_center
+
+                    score_letter = "y" if st["is_pass"] else "n"
+                    ws.cell(r_curr, cols["score"], value=score_letter).font = font_base
+                    ws.cell(r_curr, cols["score"]).alignment = align_center
+
+                # Formulas for Fall Total
+                ws.cell(r_fa_total, cols["score"], value=f'=countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"=Y")').font = font_base
+                ws.cell(r_fa_total, cols["score"]).alignment = align_center
+                ws.cell(r_fa_total, cols["total"], value=f'=sum(countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"Y"),countif({scr_col_letter}{r_fa_data_start}:{scr_col_letter}{r_fa_data_end},"N"))').font = font_base
+                ws.cell(r_fa_total, cols["total"]).alignment = align_center
+
+            fall_total_row = r_fa_total
+
+            # Spring Block: Unpopulated placeholder
+            r_sp_start = fall_total_row + 2
+            ws.cell(r_sp_start + 2, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
+            spring_total_row = r_sp_start + 15
+            ws.cell(spring_total_row, 1, value=f"Total {spring_term}").font = font_bold
+            ws.cell(spring_total_row, 1).alignment = align_center
+
+            for s_id, cols in sec_cols.items():
+                scr_col_letter = get_column_letter(cols["score"])
+                ws.cell(spring_total_row, cols["score"], value=f'=countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"=Y")').font = font_base
+                ws.cell(spring_total_row, cols["score"]).alignment = align_center
+                ws.cell(spring_total_row, cols["total"], value=f'=sum(countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"Y"),countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"N"))').font = font_base
+                ws.cell(spring_total_row, cols["total"]).alignment = align_center
+
+        # Summary Block below Spring Total
+        r_sum_hdr = spring_total_row + 2
+        ws.cell(r_sum_hdr, 3, value="Fall").font = font_bold
+        ws.cell(r_sum_hdr, 8, value="Spring").font = font_bold
+
+        r_sem_tot = r_sum_hdr + 1
+        ws.cell(r_sem_tot, 1, value="Semester Totals").font = font_bold
+        ws.cell(r_sem_tot, 1).alignment = align_center
+
+        fall_scr_sum = "+".join(f"{get_column_letter(c['score'])}{fall_total_row}" for c in sec_cols.values())
+        fall_tot_sum = "+".join(f"{get_column_letter(c['total'])}{fall_total_row}" for c in sec_cols.values())
+        ws.cell(r_sem_tot, 3, value=f"={fall_scr_sum}").font = font_base
+        ws.cell(r_sem_tot, 3).alignment = align_center
+        ws.cell(r_sem_tot, 4, value=f"={fall_tot_sum}").font = font_base
+        ws.cell(r_sem_tot, 4).alignment = align_center
+
+        sp_scr_sum = "+".join(f"{get_column_letter(c['score'])}{spring_total_row}" for c in sec_cols.values())
+        sp_tot_sum = "+".join(f"{get_column_letter(c['total'])}{spring_total_row}" for c in sec_cols.values())
+        ws.cell(r_sem_tot, 8, value=f"={sp_scr_sum}").font = font_base
+        ws.cell(r_sem_tot, 8).alignment = align_center
+        ws.cell(r_sem_tot, 9, value=f"={sp_tot_sum}").font = font_base
+        ws.cell(r_sem_tot, 9).alignment = align_center
+
+        r_gr_tot = r_sem_tot + 2
+        ws.cell(r_gr_tot, 1, value="Grand Totals").font = font_bold
+        ws.cell(r_gr_tot, 1).alignment = align_center
+        ws.cell(r_gr_tot, 3, value=f"=C{r_sem_tot}+H{r_sem_tot}").font = font_base
+        ws.cell(r_gr_tot, 3).alignment = align_center
+        ws.cell(r_gr_tot, 4, value=f"=D{r_sem_tot}+I{r_sem_tot}").font = font_base
+        ws.cell(r_gr_tot, 4).alignment = align_center
+
+        r_pct = r_gr_tot + 1
+        ws.cell(r_pct, 1, value="Percentage").font = font_bold
+        ws.cell(r_pct, 1).alignment = align_center
+        ws.cell(r_pct, 3, value=f"=IF(D{r_gr_tot}>0,ROUND(C{r_gr_tot}/D{r_gr_tot}*100,0),0)").font = font_base
+        ws.cell(r_pct, 3).alignment = align_center
+
+        r_met = r_pct + 2
+        ws.cell(r_met, 1, value="Met PI?").font = font_bold
+        ws.cell(r_met, 1).alignment = align_center
+        target_pct = int(cfg.get("target_pass_rate_percent", 70))
+        ws.cell(r_met, 3, value=f'=IF(C{r_pct}>={target_pct}, "Y", "N")').font = font_bold
+        ws.cell(r_met, 3).alignment = align_center
+        ws.cell(r_met, 7, value=f"Percentages > {target_pct} means the indicator has been met.").font = font_base
+        ws.cell(r_met, 7).alignment = align_left
+
+        r_desc = r_met + 2
+        ws.cell(r_desc, 1, value=code).font = font_bold
+        ws.cell(r_desc, 1).alignment = align_center
+        desc_text = cfg.get("notes") or cfg.get("assessment_name") or res.get("full_assessment_name", "")
+        ws.merge_cells(start_row=r_desc, start_column=2, end_row=r_desc, end_column=max_used_col)
+        ws.cell(r_desc, 2, value=desc_text).font = font_bold
+        ws.cell(r_desc, 2).alignment = align_left
+
+        # Set standard column widths matching reference layout
+        col_width_defaults = {
+            1: 14.75, 2: 9.63, 3: 5.75, 4: 4.38, 5: 10.75, 6: 9.63,
+            7: 11.25, 8: 5.88, 9: 5.38, 10: 10.25, 11: 6.25, 12: 5.38,
+            13: 8.5, 14: 6.0, 15: 4.5, 16: 9.75, 17: 8.5
+        }
+        for col_idx in range(1, max_used_col + 1):
+            letter = get_column_letter(col_idx)
+            w = col_width_defaults.get(col_idx, 8.5)
+            ws.column_dimensions[letter].width = w
+
+        wb.save(output_xlsx_path)
+        print(f"Generated Academic Year Assessment Excel Report: {output_xlsx_path}")
+        generated_paths.append(output_xlsx_path)
+
+    return generated_paths
+
+
+def export_excel_report(course_dir: str, plan: dict, report_assessment_results: list, per_student_export_rows: list = None, total_enrolled: int = 0, active_count: int = 0, withdrawn_count: int = 0, instructor_map: dict = None) -> str:
+    """Wrapper calling export_academic_year_excel_report for compatibility."""
+    if instructor_map is None:
+        instructor_map = load_instructor_mapping(course_dir)
+    paths = export_academic_year_excel_report(course_dir, plan, report_assessment_results, instructor_map)
+    return paths[0] if paths else ""
 
 
 if __name__ == "__main__":

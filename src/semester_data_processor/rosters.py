@@ -7,13 +7,89 @@ import os
 import glob
 import re
 import csv
+import json
 from .readme import generate_output_readme
+
+
+def parse_sections_text(filepath: str) -> dict:
+    """Parses text file mapping instructors to sections, e.g. 'Fang 16197 17089'."""
+    sec_to_inst = {}
+    with open(filepath, "r", encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" in line:
+                left, right = line.split(":", 1)
+                right_tokens = re.split(r'[\s,]+', right.strip())
+                if left.strip().isdigit():
+                    sec_to_inst[left.strip()] = right.strip()
+                else:
+                    inst = left.strip()
+                    for t in right_tokens:
+                        if t.isdigit():
+                            sec_to_inst[t] = inst
+            else:
+                tokens = re.split(r'[\s,]+', line)
+                if not tokens:
+                    continue
+                if not tokens[0].isdigit():
+                    inst = tokens[0]
+                    for t in tokens[1:]:
+                        if t.isdigit():
+                            sec_to_inst[t] = inst
+                else:
+                    sec = tokens[0]
+                    inst = " ".join(tokens[1:])
+                    sec_to_inst[sec] = inst
+    return sec_to_inst
+
+
+def load_instructor_mapping(course_dir: str) -> dict:
+    """Discovers and loads section to instructor mapping from plan or sections text files."""
+    sec_to_inst = {}
+    plan_paths = [
+        os.path.join(course_dir, "assessment_plan.json"),
+        os.path.join(course_dir, "raw", "assessment_plan.json")
+    ]
+    for p in plan_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    cfg = data.get("instructors", {})
+                    for k, v in cfg.items():
+                        if isinstance(v, list):
+                            for s in v:
+                                sec_to_inst[str(s)] = str(k)
+                        elif isinstance(v, str):
+                            if k.isdigit():
+                                sec_to_inst[str(k)] = v
+                            elif v.isdigit():
+                                sec_to_inst[v] = k
+            except Exception:
+                pass
+
+    search_dirs = [os.path.join(course_dir, "raw"), course_dir]
+    for d in search_dirs:
+        if not os.path.exists(d):
+            continue
+        txt_files = sorted(glob.glob(os.path.join(d, "*section*.txt")) + glob.glob(os.path.join(d, "*instructor*.txt")))
+        for tf in txt_files:
+            parsed = parse_sections_text(tf)
+            for s, inst in parsed.items():
+                if s not in sec_to_inst:
+                    sec_to_inst[s] = inst
+
+    return sec_to_inst
 
 
 def process_rosters(course_dir: str) -> str:
     raw_dir = os.path.join(course_dir, "raw")
     if not os.path.exists(raw_dir):
         raise FileNotFoundError(f"Raw directory not found: {raw_dir}")
+
+    instructor_map = load_instructor_mapping(course_dir)
 
     # Find roster files
     roster_files = sorted(glob.glob(os.path.join(raw_dir, "CourseRoster*.csv")))
@@ -30,7 +106,7 @@ def process_rosters(course_dir: str) -> str:
     fieldnames_set = set()
 
     priority_cols = [
-        "UWFID", "Last Name", "First Name", "Preferred Name", "Full Name",
+        "Anonymous ID", "Instructor", "UWFID", "Last Name", "First Name", "Preferred Name", "Full Name",
         "Email", "Section Number", "Major", "Level", "Program", "Student Type",
         "Registered", "Withdrawn", "Status", "Cohort"
     ]
@@ -55,6 +131,9 @@ def process_rosters(course_dir: str) -> str:
                 cleaned_row["Section Number"] = section_number
                 if "Section" not in cleaned_row or not cleaned_row["Section"]:
                     cleaned_row["Section"] = section_number
+
+                # Map Instructor
+                cleaned_row["Instructor"] = instructor_map.get(section_number, "")
 
                 # Normalize Program / Major column
                 program_val = cleaned_row.get("Program", "").strip()
@@ -90,7 +169,23 @@ def process_rosters(course_dir: str) -> str:
                     seen_keys.add(dedup_key)
                     all_students.append(cleaned_row)
 
-    # Sort students by Last Name, First Name
+    # Sort students by Section Number, then Last Name, First Name
+    all_students.sort(key=lambda s: (s.get("Section Number", ""), s.get("Last Name", "").lower(), s.get("First Name", "").lower()))
+
+    # Assign Anonymous ID (S1, S2, ...) per section for active students
+    sec_counters = {}
+    for s in all_students:
+        sec = s.get("Section Number", "Unknown")
+        if s.get("Status") == "Active":
+            c = sec_counters.get(sec, 0) + 1
+            sec_counters[sec] = c
+            s["Anonymous ID"] = f"S{c}"
+        else:
+            s["Anonymous ID"] = ""
+    fieldnames_set.add("Anonymous ID")
+    fieldnames_set.add("Instructor")
+
+    # Final overall sort by Last Name, First Name
     all_students.sort(key=lambda s: (s.get("Last Name", "").lower(), s.get("First Name", "").lower()))
 
     # Build final header order

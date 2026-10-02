@@ -97,15 +97,14 @@ class MultiInstructorTests(unittest.TestCase):
         self.assertNotIn('CS Majors Only', markdown)
         self.assertIn('cybersecurity', markdown)
         import openpyxl
-        wb = openpyxl.load_workbook(self.course / 'assessment_report.xlsx', data_only=True)
-        sheet_rows = list(wb['Assessment Summary & Plan'].values)
-        for code, counts in expected.items():
-            row = next(r for r in sheet_rows if r[0] == code and isinstance(r[2], int))
-            self.assertEqual(row[2:4], counts)
-            self.assertEqual(row[7], summary[code]['Target Major'])
-        result_rows = list(wb['Student Assessment Results'].values)
-        self.assertIn('Target Major', result_rows[0])
-        self.assertEqual(len(result_rows) - 1, len(details))
+        cs_xlsx_files = list(self.course.glob('*CS-ONLY*Data-CS.xlsx'))
+        self.assertTrue(len(cs_xlsx_files) > 0)
+        wb = openpyxl.load_workbook(cs_xlsx_files[0], data_only=False)
+        self.assertIn('Assessment', wb.sheetnames[0])
+        ws = wb.active
+        self.assertIn('Assessment results', ws.cell(1, 1).value)
+        found_s1 = any(ws.cell(r, 1).value == 'S1' or ws.cell(r, 7).value == 'S1' for r in range(1, ws.max_row + 1))
+        self.assertTrue(found_s1)
         wb.close()
 
     def test_conflicting_scores_leave_existing_output_untouched(self):

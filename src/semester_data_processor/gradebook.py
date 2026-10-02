@@ -125,6 +125,8 @@ def process_gradebook(course_dir: str) -> str:
 
         # 2. External roster attributes
         merged_row["Section Number"] = roster_info.get("Section Number", "")
+        merged_row["Instructor"] = roster_info.get("Instructor", "")
+        merged_row["Anonymous ID"] = roster_info.get("Anonymous ID", "")
         merged_row["Major"] = roster_info.get("Major", roster_info.get("Program", ""))
         merged_row["Status"] = roster_info.get("Status", "Active")
         merged_row["Level"] = roster_info.get("Level", "")
@@ -152,6 +154,8 @@ def process_gradebook(course_dir: str) -> str:
                 "SIS User ID": uwfid,
                 "SIS Login ID": "",
                 "Section Number": roster_info.get("Section Number", ""),
+                "Instructor": roster_info.get("Instructor", ""),
+                "Anonymous ID": roster_info.get("Anonymous ID", ""),
                 "Major": roster_info.get("Major", roster_info.get("Program", "")),
                 "Status": roster_info.get("Status", "Active"),
                 "Level": roster_info.get("Level", ""),
@@ -165,7 +169,7 @@ def process_gradebook(course_dir: str) -> str:
 
     student_records.sort(key=lambda r: r.get("Student", r.get("Last Name", "")).lower())
 
-    id_metadata_cols = ["Student", "ID", "SIS User ID", "SIS Login ID", "Section Number", "Major", "Status", "Level", "Cohort", "Canvas Section"]
+    id_metadata_cols = ["Student", "ID", "SIS User ID", "SIS Login ID", "Section Number", "Instructor", "Anonymous ID", "Major", "Status", "Level", "Cohort", "Canvas Section"]
     
     all_keys = set()
     for rec in student_records:
