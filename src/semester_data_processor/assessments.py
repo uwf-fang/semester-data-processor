@@ -599,6 +599,115 @@ def extract_assessments(course_dir: str) -> str:
     return report_output_path
 
 
+def resolve_course_and_academic_year(course_dir: str, plan: dict) -> dict:
+    """
+    Resolves course code, academic year, and active semester term.
+    Validates against raw roster filenames and directory naming to prevent misaligned reports,
+    issuing clear warnings if assessment_plan.json has conflicting metadata.
+    """
+    raw_dir = os.path.join(course_dir, "raw")
+    dir_name = os.path.basename(os.path.abspath(course_dir)).lower()
+
+    # 1. Course Code Resolution
+    m_dir_course = re.search(r'([A-Za-z]{3}\s*\d{4})', dir_name)
+    dir_course_code = m_dir_course.group(1).replace(" ", "").upper() if m_dir_course else ""
+
+    plan_course_name = plan.get("course_name", "")
+    m_plan_course = re.search(r'([A-Za-z]{3}\s*\d{4})', plan_course_name)
+    plan_course_code = m_plan_course.group(1).replace(" ", "").upper() if m_plan_course else ""
+
+    if dir_course_code and plan_course_code and dir_course_code != plan_course_code:
+        print(f"\nWARNING: assessment_plan.json course_name '{plan_course_name}' ({plan_course_code}) conflicts with directory '{os.path.basename(course_dir)}' ({dir_course_code})!")
+        print(f"Using directory course code '{dir_course_code}' for report naming.\n")
+        course_code = dir_course_code
+    elif plan_course_code:
+        course_code = plan_course_code
+    elif dir_course_code:
+        course_code = dir_course_code
+    else:
+        course_code = "COURSE"
+
+    # 2. Extract ground truth term codes from raw/
+    raw_terms = set()
+    if os.path.exists(raw_dir):
+        for fname in os.listdir(raw_dir):
+            m_r = re.search(r'CourseRoster_(20\d{2}(?:08|01|05))', fname, re.IGNORECASE)
+            if m_r:
+                raw_terms.add(m_r.group(1))
+            m_s = re.search(r'(20\d{2}(?:08|01|05))[-_]sections', fname, re.IGNORECASE)
+            if m_s:
+                raw_terms.add(m_s.group(1))
+            m_g = re.search(r'_(20\d{2}(?:08|01|05))\.csv', fname, re.IGNORECASE)
+            if m_g:
+                raw_terms.add(m_g.group(1))
+
+    # Also detect from directory name, e.g. 25fall -> 202508, 26spring -> 202601
+    dir_term = ""
+    m_dir_term = re.search(r'(20\d{2}(?:08|01|05))', dir_name)
+    if m_dir_term:
+        dir_term = m_dir_term.group(1)
+    else:
+        m_dir_sem = re.search(r'(\d{2})(fall|spring)', dir_name)
+        if m_dir_sem:
+            y = 2000 + int(m_dir_sem.group(1))
+            sem = m_dir_sem.group(2)
+            dir_term = f"{y}08" if sem == "fall" else f"{y}01"
+
+    # 3. Determine active term
+    ground_truth_term = sorted(list(raw_terms))[0] if raw_terms else dir_term
+
+    plan_term = str(plan.get("term_code", "")).strip()
+    plan_sem = str(plan.get("semester", "")).strip().lower()
+
+    if ground_truth_term:
+        if plan_term and plan_term != ground_truth_term:
+            print(f"\nWARNING: assessment_plan.json term_code '{plan_term}' conflicts with raw data term '{ground_truth_term}'!")
+            print(f"Using raw data term '{ground_truth_term}' for accurate report generation.\n")
+            active_term = ground_truth_term
+        elif plan_sem and (("fall" in plan_sem and ground_truth_term.endswith("01")) or ("spring" in plan_sem and ground_truth_term.endswith("08"))):
+            print(f"\nWARNING: assessment_plan.json semester '{plan.get('semester')}' conflicts with raw data term '{ground_truth_term}'!")
+            print(f"Using raw data term '{ground_truth_term}' for accurate report generation.\n")
+            active_term = ground_truth_term
+        else:
+            active_term = ground_truth_term
+    else:
+        active_term = plan_term or "202601"
+
+    # 4. Resolve Academic Year (supports "academic_year": "25-26" or "2025-2026")
+    ay_val = plan.get("academic_year")
+    fall_term, spring_term = "", ""
+    if ay_val:
+        m_ay = re.search(r'(\d{2,4})\s*[-/]\s*(\d{2,4})', str(ay_val).strip())
+        if m_ay:
+            y1 = int(m_ay.group(1)) if len(m_ay.group(1)) == 4 else 2000 + int(m_ay.group(1))
+            y2 = int(m_ay.group(2)) if len(m_ay.group(2)) == 4 else 2000 + int(m_ay.group(2))
+            fall_term = f"{y1}08"
+            spring_term = f"{y2}01"
+
+    if not fall_term or not spring_term:
+        if active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08")):
+            y = int(active_term[:4])
+            fall_term = f"{y}08"
+            spring_term = f"{y + 1}01"
+        else:
+            y = int(active_term[:4])
+            fall_term = f"{y - 1}08"
+            spring_term = f"{y}01"
+
+    is_fall = active_term.endswith("08") or "fall" in plan_sem or (dir_term and dir_term.endswith("08"))
+    is_spring = not is_fall
+
+    return {
+        "course_code": course_code,
+        "fall_term": fall_term,
+        "spring_term": spring_term,
+        "active_term": active_term,
+        "is_fall": is_fall,
+        "is_spring": is_spring,
+        "academic_year_label": f"{fall_term[:4]}-{spring_term[2:4]}"
+    }
+
+
 def export_academic_year_excel_report(course_dir: str, plan: dict, report_assessment_results: list, instructor_map: dict = None) -> list:
     """
     Generates standardized Academic Year Assessment Excel Workbooks (e.g. COP4020-CS-ONLY-Individual Data-LO2PI3.xlsx).
@@ -617,44 +726,12 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
         instructor_map = load_instructor_mapping(course_dir)
 
     generated_paths = []
-    course_name = plan.get("course_name", os.path.basename(course_dir))
-    m = re.search(r'([A-Za-z]{3}\s*\d{4})', course_name)
-    course_code = m.group(1).replace(" ", "").upper() if m else os.path.basename(course_dir).upper()
-
-    # Determine term codes and academic year
-    semester_raw = str(plan.get("semester", ""))
-    term_code = str(plan.get("term_code", ""))
-    if not term_code:
-        m_term = re.search(r'(20\d{2}(?:08|01|05))', course_dir)
-        if m_term:
-            term_code = m_term.group(1)
-        else:
-            raw_dir = os.path.join(course_dir, "raw")
-            if os.path.exists(raw_dir):
-                for f in os.listdir(raw_dir):
-                    m_f = re.search(r'CourseRoster_(20\d{2}(?:08|01|05))', f)
-                    if m_f:
-                        term_code = m_f.group(1)
-                        break
-
-    if not term_code:
-        m_year = re.search(r'(20\d{2})', semester_raw)
-        year = m_year.group(1) if m_year else "2026"
-        if "fall" in semester_raw.lower():
-            term_code = f"{year}08"
-        elif "spring" in semester_raw.lower():
-            term_code = f"{year}01"
-        else:
-            term_code = f"{year}01"
-
-    is_spring = term_code.endswith("01") or "spring" in semester_raw.lower()
-    year_int = int(term_code[:4]) if len(term_code) >= 4 and term_code[:4].isdigit() else 2026
-    if is_spring:
-        spring_term = term_code if len(term_code) == 6 else f"{year_int}01"
-        fall_term = f"{year_int - 1}08"
-    else:
-        fall_term = term_code if len(term_code) == 6 else f"{year_int}08"
-        spring_term = f"{year_int + 1}01"
+    term_info = resolve_course_and_academic_year(course_dir, plan)
+    course_code = term_info["course_code"]
+    fall_term = term_info["fall_term"]
+    spring_term = term_info["spring_term"]
+    is_fall = term_info["is_fall"]
+    is_spring = term_info["is_spring"]
 
     title_text = f"{course_code} Assessment results {fall_term} and {spring_term}"
 
@@ -876,12 +953,21 @@ def export_academic_year_excel_report(course_dir: str, plan: dict, report_assess
 
             # Spring Block: Unpopulated placeholder
             r_sp_start = fall_total_row + 2
+            ws.cell(r_sp_start, 16, value="Edit if professors or # of sections change").font = font_base
             ws.cell(r_sp_start + 2, 1, value=float(spring_term) if spring_term.isdigit() else spring_term).font = font_bold
             spring_total_row = r_sp_start + 15
             ws.cell(spring_total_row, 1, value=f"Total {spring_term}").font = font_bold
             ws.cell(spring_total_row, 1).alignment = align_center
 
             for s_id, cols in sec_cols.items():
+                ws.cell(r_sp_start + 2, cols["score"], value=display_code).font = font_base
+                ws.cell(r_sp_start + 2, cols["score"]).alignment = align_center
+                ws.cell(r_sp_start + 3, cols["std"], value="Student").font = font_base
+                ws.cell(r_sp_start + 3, cols["std"]).alignment = align_center
+                if s_id == sections[0]:
+                    ws.cell(r_sp_start + 3, cols["score"], value="Y/N").font = font_base
+                    ws.cell(r_sp_start + 3, cols["score"]).alignment = align_center
+
                 scr_col_letter = get_column_letter(cols["score"])
                 ws.cell(spring_total_row, cols["score"], value=f'=countif({scr_col_letter}{r_sp_start+4}:{scr_col_letter}{spring_total_row-3},"=Y")').font = font_base
                 ws.cell(spring_total_row, cols["score"]).alignment = align_center
