@@ -18,12 +18,11 @@ from semester_data_processor.rosters import parse_sections_text, load_instructor
 class TestAcademicYearReport(unittest.TestCase):
 
     def setUp(self):
-        self.test_dir = tempfile.mkdtemp()
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.test_dir = os.path.join(temp_dir.name, "course-data")
         self.raw_dir = os.path.join(self.test_dir, "raw")
         os.makedirs(self.raw_dir, exist_ok=True)
-
-    def tearDown(self):
-        shutil.rmtree(self.test_dir)
 
     def test_parse_sections_text(self):
         """Test parsing sections.txt with instructor and CRN mapping."""
