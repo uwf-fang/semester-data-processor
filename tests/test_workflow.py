@@ -3,7 +3,7 @@
 tests/test_workflow.py - Automated Unit Tests for Assessment Data Processing Package.
 
 Tests:
-1. Dynamic Gradebook Row Parsing (handling presence/absence of Manual Posting rows like Nathan Garrett's case).
+1. Dynamic Gradebook Row Parsing (with and without Manual Posting rows).
 2. Section CRN Extraction from raw roster filenames.
 3. Roster vs Gradebook Audit Reconciliation (ensuring no student is silently dropped).
 4. Multiple Learning Outcomes / Performance Indicators per Assessment Plan.
@@ -69,12 +69,12 @@ class TestSemesterWorkflow(unittest.TestCase):
         roster_csv_1 = os.path.join(self.raw_dir, "CourseRoster_202601_18451 (1).csv")
         with open(roster_csv_1, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970651302, Zane, Brunache, zmb12@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000003, Avery, Example, fixture1@example.com, Undergraduate, Computer Science\n")
 
         roster_csv_2 = os.path.join(self.raw_dir, "CourseRoster_202601_18626 (1).csv")
         with open(roster_csv_2, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970606636, Cole, Compton, ccc42@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000001, Blair, Fiction, fixture2@example.com, Undergraduate, Computer Science\n")
 
         output_path = process_rosters(self.test_dir)
         self.assertTrue(os.path.exists(output_path))
@@ -86,19 +86,19 @@ class TestSemesterWorkflow(unittest.TestCase):
         self.assertIn("18626", content)
 
     def test_gradebook_without_manual_posting_row(self):
-        """Test parsing Canvas export WITHOUT Manual Posting row (exact Nathan Garrett case)."""
+        """Test parsing Canvas export WITHOUT Manual Posting row."""
         roster_csv = os.path.join(self.raw_dir, "CourseRoster_202601_18451.csv")
         with open(roster_csv, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970673947, Nathan, Garrett, ngg7@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970617074, Louis, Crabtree, ljc48@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000005, Casey, Sample, fixture3@example.com, Undergraduate, Computer Science\n")
+            f.write("100000002, Drew, Demo, fixture4@example.com, Undergraduate, Computer Science\n")
 
         gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COPXXXX.csv")
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1270399)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Garrett, Nathan",81556,970673947,ngg7,18451_COPXXXX,100.00\n')
-            f.write('"Crabtree, Louis",81557,970617074,ljc48,18451_COPXXXX,90.00\n')
+            f.write('"Sample, Casey",90002,100000005,fixture3,18451_COPXXXX,100.00\n')
+            f.write('"Demo, Drew",90003,100000002,fixture4,18451_COPXXXX,90.00\n')
 
         process_rosters(self.test_dir)
         output_gb = process_gradebook(self.test_dir)
@@ -107,8 +107,8 @@ class TestSemesterWorkflow(unittest.TestCase):
         with open(output_gb, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn("970673947", content)
-        self.assertIn("Garrett, Nathan", content)
+        self.assertIn("100000005", content)
+        self.assertIn("Sample, Casey", content)
         self.assertIn("100.00", content)
 
     def test_gradebook_with_manual_posting_row(self):
@@ -116,14 +116,14 @@ class TestSemesterWorkflow(unittest.TestCase):
         roster_csv = os.path.join(self.raw_dir, "CourseRoster_202508_87575.csv")
         with open(roster_csv, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970657342, Brent, Anderson, bma42@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000004, Emery, Placeholder, fixture5@example.com, Undergraduate, Computer Science\n")
 
         gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4534.csv")
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1200002)\n")
             f.write(",,,,,Manual Posting\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Anderson, Brent",71556,970657342,bma42,87575_COP4534,100.00\n')
+            f.write('"Placeholder, Emery",90001,100000004,fixture5,87575_COP4534,100.00\n')
 
         process_rosters(self.test_dir)
         output_gb = process_gradebook(self.test_dir)
@@ -132,22 +132,22 @@ class TestSemesterWorkflow(unittest.TestCase):
         with open(output_gb, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn("970657342", content)
-        self.assertIn("Anderson, Brent", content)
+        self.assertIn("100000004", content)
+        self.assertIn("Placeholder, Emery", content)
 
     def test_roster_reconciliation(self):
         """Test that active students in roster are never dropped even if missing from Canvas gradebook."""
         roster_csv = os.path.join(self.raw_dir, "CourseRoster_87575.csv")
         with open(roster_csv, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970657342, Brent, Anderson, bma42@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970999999, Missing, Student, missing@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000004, Emery, Placeholder, fixture5@example.com, Undergraduate, Computer Science\n")
+            f.write("100000006, Frankie, Testcase, fixture6@example.com, Undergraduate, Computer Science\n")
 
         gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4534.csv")
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1200002)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Anderson, Brent",71556,970657342,bma42,87575_COP4534,100.00\n')
+            f.write('"Placeholder, Emery",90001,100000004,fixture5,87575_COP4534,100.00\n')
 
         process_rosters(self.test_dir)
         output_gb = process_gradebook(self.test_dir)
@@ -155,21 +155,21 @@ class TestSemesterWorkflow(unittest.TestCase):
         with open(output_gb, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn("970999999", content)
-        self.assertIn("Student, Missing", content)
+        self.assertIn("100000006", content)
+        self.assertIn("Testcase, Frankie", content)
 
     def test_multiple_learning_outcomes_in_plan(self):
         """Test processing plan containing MULTIPLE learning outcomes / performance indicators."""
         roster_csv = os.path.join(self.raw_dir, "CourseRoster_87575.csv")
         with open(roster_csv, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970657342, Brent, Anderson, bma42@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000004, Emery, Placeholder, fixture5@example.com, Undergraduate, Computer Science\n")
 
         gb_csv = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4534.csv")
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1200002),Project 2 (1200003)\n")
             f.write("    Points Possible,,,,,100.00,100.00\n")
-            f.write('"Anderson, Brent",71556,970657342,bma42,87575_COP4534,100.00,85.00\n')
+            f.write('"Placeholder, Emery",90001,100000004,fixture5,87575_COP4534,100.00,85.00\n')
 
         plan_data = {
             "course_name": "COP 4534 - Data Structures II",
@@ -233,7 +233,7 @@ class TestSemesterWorkflow(unittest.TestCase):
         roster_csv = os.path.join(self.raw_dir, "CourseRoster_87575.csv")
         with open(roster_csv, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970657342, Brent, Anderson, bma42@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000004, Emery, Placeholder, fixture5@example.com, Undergraduate, Computer Science\n")
 
         # 1. Process rosters and check generated README
         process_rosters(self.test_dir)
@@ -253,7 +253,7 @@ class TestSemesterWorkflow(unittest.TestCase):
         with open(gb_csv, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1200002)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Anderson, Brent",71556,970657342,bma42,87575_COP4534,100.00\n')
+            f.write('"Placeholder, Emery",90001,100000004,fixture5,87575_COP4534,100.00\n')
 
         process_gradebook(self.test_dir)
 

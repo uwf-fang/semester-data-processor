@@ -1,5 +1,9 @@
 # Semester Data Processor (`semester-data-processor`)
 
+[![Main CI](https://github.com/uwf-fang/semester-data-processor/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/uwf-fang/semester-data-processor/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
+[![Release Checks](https://github.com/uwf-fang/semester-data-processor/actions/workflows/release-checks.yml/badge.svg)](https://github.com/uwf-fang/semester-data-processor/actions/workflows/release-checks.yml)
+[![PyPI version](https://img.shields.io/pypi/v/semester-data-processor)](https://pypi.org/project/semester-data-processor/)
+
 `semester-data-processor` is an automated Python package designed for university faculty, course coordinators, and academic departments to streamline course data management, output dataset documentation, and accreditation reporting. 
 
 It automates:
@@ -274,6 +278,8 @@ generate_output_readme(course_dir, action_name="Full Pipeline Run")
 ---
 
 ## Running Unit Tests
+
+GitHub Actions builds the wheel and source distribution, checks the package metadata, and runs the test suite against the installed wheel on Ubuntu with Python 3.10 through 3.15. Main CI runs on pushes and pull requests targeting `main`. Release Checks runs the same checks at the release tag when a GitHub release is published. The PyPI badge shows the package version available on PyPI.
 
 Run the automated verification test suite:
 

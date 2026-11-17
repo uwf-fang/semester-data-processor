@@ -1,0 +1,48 @@
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.15']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build and check distributions
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Install and check the wheel
+        run: |
+          python -m pip install dist/*.whl
+          python -m pip check
+          sdp --help
+
+      - name: Run tests against the installed wheel
+        run: |
+          # Keep the source tree off the import path used by the tests.
+          cp -R tests "$RUNNER_TEMP/semester-data-tests"
+          python -m unittest discover -s "$RUNNER_TEMP/semester-data-tests" -b

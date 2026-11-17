@@ -53,24 +53,24 @@ class TestAcademicYearReport(unittest.TestCase):
         r1 = os.path.join(self.raw_dir, "CourseRoster_202601_16197.csv")
         with open(r1, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970111111, Alice, Smith, as1@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970222222, Bob, Jones, bj2@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000001, Alice, Smith, fixture1@example.com, Undergraduate, Computer Science\n")
+            f.write("100000002, Bob, Jones, fixture2@example.com, Undergraduate, Computer Science\n")
 
         r2 = os.path.join(self.raw_dir, "CourseRoster_202601_18451.csv")
         with open(r2, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970333333, Charlie, Brown, cb3@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970444444, David, Clark, dc4@students.uwf.edu, Undergraduate, Software Design & Development\n")
+            f.write("100000003, Charlie, Brown, fixture3@example.com, Undergraduate, Computer Science\n")
+            f.write("100000004, David, Clark, fixture4@example.com, Undergraduate, Software Design & Development\n")
 
         # 3. Create raw gradebook file
         gb = os.path.join(self.raw_dir, "2026-09-02_Grades-COP4020.csv")
         with open(gb, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1270399)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Jones, Bob",80001,970222222,bj2,16197_COP4020,85.00\n')
-            f.write('"Smith, Alice",80002,970111111,as1,16197_COP4020,95.00\n')
-            f.write('"Brown, Charlie",80003,970333333,cb3,18451_COP4020,60.00\n')
-            f.write('"Clark, David",80004,970444444,dc4,18451_COP4020,90.00\n')
+            f.write('"Jones, Bob",90001,100000002,fixture2,16197_COP4020,85.00\n')
+            f.write('"Smith, Alice",90002,100000001,fixture1,16197_COP4020,95.00\n')
+            f.write('"Brown, Charlie",90003,100000003,fixture3,18451_COP4020,60.00\n')
+            f.write('"Clark, David",90004,100000004,fixture4,18451_COP4020,90.00\n')
 
         # 4. Create plan for SACSCOC / general accreditation
         plan = {
@@ -154,7 +154,7 @@ class TestAcademicYearReport(unittest.TestCase):
 
         # Verify FERPA compliance: real names and SIS IDs must NOT be anywhere in the sheet
         all_cell_values = [str(cell.value) for row in ws.rows for cell in row if cell.value is not None]
-        for sensitive in ["Smith", "Alice", "Jones", "Bob", "Charlie", "Brown", "970111111", "970222222", "970333333"]:
+        for sensitive in ["Smith", "Alice", "Jones", "Bob", "Charlie", "Brown", "100000001", "100000002", "100000003"]:
             self.assertNotIn(sensitive, all_cell_values)
 
         wb.close()
@@ -202,13 +202,13 @@ class TestAcademicYearReport(unittest.TestCase):
         r_fa1 = os.path.join(self.raw_dir, "CourseRoster_202508_86053.csv")
         with open(r_fa1, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970111111, Alice, Adams, aa1@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970222222, Bob, Baker, bb2@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000001, Alice, Adams, fixture5@example.com, Undergraduate, Computer Science\n")
+            f.write("100000002, Bob, Baker, fixture6@example.com, Undergraduate, Computer Science\n")
 
         r_fa2 = os.path.join(self.raw_dir, "CourseRoster_202508_87575.csv")
         with open(r_fa2, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970333333, Charlie, Clark, cc3@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000003, Charlie, Clark, fixture7@example.com, Undergraduate, Computer Science\n")
 
         # 2. Spring semester setup (202601)
         sec_sp = os.path.join(self.raw_dir, "202601-sections.txt")
@@ -219,30 +219,30 @@ class TestAcademicYearReport(unittest.TestCase):
         r_sp1 = os.path.join(self.raw_dir, "CourseRoster_202601_18451.csv")
         with open(r_sp1, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970444444, David, Davis, dd4@students.uwf.edu, Undergraduate, Computer Science\n")
-            f.write("970555555, Eve, Evans, ee5@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000004, David, Davis, fixture8@example.com, Undergraduate, Computer Science\n")
+            f.write("100000005, Eve, Evans, fixture9@example.com, Undergraduate, Computer Science\n")
 
         r_sp2 = os.path.join(self.raw_dir, "CourseRoster_202601_18626.csv")
         with open(r_sp2, "w", encoding="utf-8") as f:
             f.write("UWFID, First Name, Last Name, Email, Level, Program\n")
-            f.write("970666666, Frank, Franklin, ff6@students.uwf.edu, Undergraduate, Computer Science\n")
+            f.write("100000006, Frank, Franklin, fixture10@example.com, Undergraduate, Computer Science\n")
 
         # 3. Gradebook files for both semesters
         gb_fa = os.path.join(self.raw_dir, "2025-12-01_Grades-COP4534.csv")
         with open(gb_fa, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (1001)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Adams, Alice",80101,970111111,aa1,86053_COP4534,95.00\n')
-            f.write('"Baker, Bob",80102,970222222,bb2,86053_COP4534,55.00\n')
-            f.write('"Clark, Charlie",80103,970333333,cc3,87575_COP4534,80.00\n')
+            f.write('"Adams, Alice",90005,100000001,fixture5,86053_COP4534,95.00\n')
+            f.write('"Baker, Bob",90006,100000002,fixture6,86053_COP4534,55.00\n')
+            f.write('"Clark, Charlie",90007,100000003,fixture7,87575_COP4534,80.00\n')
 
         gb_sp = os.path.join(self.raw_dir, "2026-05-01_Grades-COP4534.csv")
         with open(gb_sp, "w", encoding="utf-8") as f:
             f.write("Student,ID,SIS User ID,SIS Login ID,Section,Project 1 (2001)\n")
             f.write("    Points Possible,,,,,100.00\n")
-            f.write('"Davis, David",80201,970444444,dd4,18451_COP4534,90.00\n')
-            f.write('"Evans, Eve",80202,970555555,ee5,18451_COP4534,85.00\n')
-            f.write('"Franklin, Frank",80203,970666666,ff6,18626_COP4534,40.00\n')
+            f.write('"Davis, David",90008,100000004,fixture8,18451_COP4534,90.00\n')
+            f.write('"Evans, Eve",90009,100000005,fixture9,18451_COP4534,85.00\n')
+            f.write('"Franklin, Frank",90010,100000006,fixture10,18626_COP4534,40.00\n')
 
         # 4. Assessment Plan with academic_year: 25-26
         plan = {
@@ -380,7 +380,7 @@ class TestAcademicYearReport(unittest.TestCase):
         all_values = [str(c.value) for row in ws.rows for c in row if c.value is not None]
         for name in ["Alice", "Adams", "Bob", "Baker", "Charlie", "Clark", "David", "Davis", "Eve", "Evans", "Frank", "Franklin"]:
             self.assertNotIn(name, all_values)
-        for uwfid in ["970111111", "970222222", "970333333", "970444444", "970555555", "970666666"]:
+        for uwfid in ["100000001", "100000002", "100000003", "100000004", "100000005", "100000006"]:
             self.assertNotIn(uwfid, all_values)
 
         wb.close()
